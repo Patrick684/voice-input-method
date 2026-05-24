@@ -1,340 +1,353 @@
-"""设置窗口模块 - 提供应用配置界面"""
+"""设置窗口模块 - 使用 CustomTkinter 实现"""
 
-from typing import Optional
-from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QTabWidget,
-    QFormLayout,
-    QComboBox,
-    QCheckBox,
-    QPushButton,
-    QLabel,
-    QLineEdit,
-    QGroupBox,
-    QSpinBox,
-    QSlider,
-    QMessageBox,
-)
-from PyQt6.QtCore import Qt, pyqtSignal
+from typing import Callable, Optional
+
+import customtkinter as ctk
 
 from config import Config
 from audio.recorder import AudioRecorder
 
+# 设置外观主题
+ctk.set_appearance_mode("system")
+ctk.set_default_color_theme("blue")
 
-class SettingsWindow(QWidget):
+
+class SettingsWindow(ctk.CTkToplevel):
     """应用设置窗口"""
 
-    settings_changed = pyqtSignal(dict)  # 设置变更信号
-
-    def __init__(self, config: Config, parent=None):
-        super().__init__(parent)
+    def __init__(
+        self,
+        config: Config,
+        on_settings_changed: Optional[Callable[[dict], None]] = None,
+        master=None,
+    ):
+        super().__init__(master)
         self.config = config
+        self._on_settings_changed = on_settings_changed
+
+        self.title("语音输入法 - 设置")
+        self.geometry("500x520")
+        self.resizable(False, False)
+
+        # 确保窗口在前台
+        self.attributes("-topmost", True)
+        self.after(100, lambda: self.attributes("-topmost", False))
+
         self._setup_ui()
         self._load_settings()
 
     def _setup_ui(self):
         """构建 UI"""
-        self.setWindowTitle("语音输入法 - 设置")
-        self.setMinimumWidth(450)
-        self.setMinimumHeight(400)
-
-        layout = QVBoxLayout(self)
-
         # 选项卡
-        tabs = QTabWidget()
-        layout.addWidget(tabs)
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=(15, 5))
 
-        # 基本设置
-        tabs.addTab(self._create_general_tab(), "基本设置")
+        self._create_general_tab()
+        self._create_engine_tab()
+        self._create_advanced_tab()
 
-        # 语音识别
-        tabs.addTab(self._create_engine_tab(), "语音识别")
+        # 底部按钮栏
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=15, pady=(5, 15))
 
-        # 高级设置
-        tabs.addTab(self._create_advanced_tab(), "高级设置")
+        ctk.CTkButton(
+            btn_frame, text="恢复默认", width=80,
+            fg_color="gray", command=self._reset_settings,
+        ).pack(side="left")
 
-        # 底部按钮
-        btn_layout = QHBoxLayout()
-        layout.addLayout(btn_layout)
+        ctk.CTkButton(
+            btn_frame, text="取消", width=80,
+            fg_color="gray", command=self.destroy,
+        ).pack(side="right")
 
-        reset_btn = QPushButton("恢复默认")
-        reset_btn.clicked.connect(self._reset_settings)
-        btn_layout.addWidget(reset_btn)
+        ctk.CTkButton(
+            btn_frame, text="保存", width=80,
+            command=self._save_settings,
+        ).pack(side="right", padx=(0, 10))
 
-        btn_layout.addStretch()
-
-        save_btn = QPushButton("保存")
-        save_btn.clicked.connect(self._save_settings)
-        btn_layout.addWidget(save_btn)
-
-        cancel_btn = QPushButton("取消")
-        cancel_btn.clicked.connect(self.close)
-        btn_layout.addWidget(cancel_btn)
-
-    def _create_general_tab(self) -> QWidget:
+    def _create_general_tab(self):
         """基本设置选项卡"""
-        widget = QWidget()
-        layout = QFormLayout(widget)
+        tab = self.tabview.add("基本设置")
 
-        # 快捷键选择
-        self.hotkey_combo = QComboBox()
-        hotkeys = [
-            ("right alt", "右 Alt"),
-            ("right ctrl", "右 Ctrl"),
-            ("right shift", "右 Shift"),
-            ("f4", "F4"),
-            ("f8", "F8"),
-            ("f9", "F9"),
-            ("f10", "F10"),
-        ]
-        for value, label in hotkeys:
-            self.hotkey_combo.addItem(label, value)
-        layout.addRow("录音快捷键:", self.hotkey_combo)
+        # 快捷键
+        ctk.CTkLabel(tab, text="录音快捷键:").pack(anchor="w", pady=(10, 0))
+        self.hotkey_var = ctk.StringVar()
+        self.hotkey_menu = ctk.CTkOptionMenu(
+            tab, variable=self.hotkey_var,
+            values=["右 Alt", "右 Ctrl", "右 Shift", "F4", "F8", "F9", "F10"],
+        )
+        self.hotkey_menu.pack(fill="x", pady=(0, 10))
 
         # 触发模式
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("按住说话", "hold")
-        self.mode_combo.addItem("切换模式", "toggle")
-        layout.addRow("触发方式:", self.mode_combo)
+        ctk.CTkLabel(tab, text="触发方式:").pack(anchor="w")
+        self.mode_var = ctk.StringVar()
+        self.mode_menu = ctk.CTkOptionMenu(
+            tab, variable=self.mode_var,
+            values=["按住说话", "切换模式"],
+        )
+        self.mode_menu.pack(fill="x", pady=(0, 10))
 
-        # 语言选择
-        self.language_combo = QComboBox()
-        self.language_combo.addItem("中文", "zh")
-        self.language_combo.addItem("English", "en")
-        self.language_combo.addItem("日本語", "ja")
-        self.language_combo.addItem("自动检测", "")
-        layout.addRow("识别语言:", self.language_combo)
+        # 语言
+        ctk.CTkLabel(tab, text="识别语言:").pack(anchor="w")
+        self.lang_var = ctk.StringVar()
+        self.lang_menu = ctk.CTkOptionMenu(
+            tab, variable=self.lang_var,
+            values=["中文", "English", "日本語", "自动检测"],
+        )
+        self.lang_menu.pack(fill="x", pady=(0, 10))
 
-        # 开机启动
-        self.auto_start_check = QCheckBox("开机自动启动")
-        layout.addRow("", self.auto_start_check)
+        # 开关选项
+        self.auto_start_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="开机自动启动", variable=self.auto_start_var,
+        ).pack(anchor="w", pady=(5, 5))
 
-        # 最小化启动
-        self.minimized_check = QCheckBox("启动时最小化到托盘")
-        layout.addRow("", self.minimized_check)
+        self.minimized_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="启动时最小化到托盘", variable=self.minimized_var,
+        ).pack(anchor="w", pady=(0, 5))
 
-        # 显示通知
-        self.notify_check = QCheckBox("显示系统通知")
-        layout.addRow("", self.notify_check)
+        self.notify_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="显示系统通知", variable=self.notify_var,
+        ).pack(anchor="w", pady=(0, 10))
 
-        return widget
-
-    def _create_engine_tab(self) -> QWidget:
+    def _create_engine_tab(self):
         """语音识别设置选项卡"""
-        widget = QWidget()
-        layout = QFormLayout(widget)
+        tab = self.tabview.add("语音识别")
 
         # 模型选择
-        self.model_combo = QComboBox()
-        models = [
-            ("tiny", "Tiny (75MB, 最快, 一般准确度)"),
-            ("base", "Base (150MB, 快, 较好准确度)"),
-            ("small", "Small (500MB, 中等速度, 好准确度)"),
-            ("medium", "Medium (1.5GB, 较慢, 很好准确度)"),
-        ]
-        for value, label in models:
-            self.model_combo.addItem(label, value)
-        layout.addRow("识别模型:", self.model_combo)
+        ctk.CTkLabel(tab, text="识别模型:").pack(anchor="w", pady=(10, 0))
+        self.model_var = ctk.StringVar()
+        self.model_menu = ctk.CTkOptionMenu(
+            tab, variable=self.model_var,
+            values=[
+                "Tiny (75MB, 最快)",
+                "Base (150MB, 推荐)",
+                "Small (500MB, 高精度)",
+                "Medium (1.5GB, 专业)",
+            ],
+        )
+        self.model_menu.pack(fill="x", pady=(0, 10))
 
         # 计算精度
-        self.compute_combo = QComboBox()
-        self.compute_combo.addItem("Int8 (推荐，速度最快)", "int8")
-        self.compute_combo.addItem("Float16", "float16")
-        self.compute_combo.addItem("Float32 (最准确)", "float32")
-        layout.addRow("计算精度:", self.compute_combo)
+        ctk.CTkLabel(tab, text="计算精度:").pack(anchor="w")
+        self.compute_var = ctk.StringVar()
+        self.compute_menu = ctk.CTkOptionMenu(
+            tab, variable=self.compute_var,
+            values=["Int8 (推荐)", "Float16", "Float32 (最准确)"],
+        )
+        self.compute_menu.pack(fill="x", pady=(0, 10))
 
         # 束搜索大小
-        self.beam_spin = QSpinBox()
-        self.beam_spin.setRange(1, 10)
-        self.beam_spin.setValue(5)
-        layout.addRow("束搜索大小:", self.beam_spin)
+        ctk.CTkLabel(tab, text="束搜索大小:").pack(anchor="w")
+        self.beam_var = ctk.IntVar(value=5)
+        self.beam_slider = ctk.CTkSlider(
+            tab, from_=1, to=10, number_of_steps=9,
+            variable=self.beam_var,
+            command=lambda v: self.beam_label.configure(text=f"束搜索大小: {int(v)}"),
+        )
+        self.beam_slider.pack(fill="x")
+        self.beam_label = ctk.CTkLabel(tab, text="束搜索大小: 5")
+        self.beam_label.pack(anchor="w", pady=(0, 10))
 
         # 音频设备
-        self.device_combo = QComboBox()
-        self.device_combo.addItem("默认设备", None)
+        ctk.CTkLabel(tab, text="麦克风设备:").pack(anchor="w")
+        self.device_var = ctk.StringVar()
+        device_values = ["默认设备"]
         try:
             for dev in AudioRecorder.list_devices():
-                self.device_combo.addItem(dev["name"], dev["index"])
+                device_values.append(dev["name"])
         except Exception:
             pass
-        layout.addRow("麦克风设备:", self.device_combo)
+        self.device_menu = ctk.CTkOptionMenu(
+            tab, variable=self.device_var, values=device_values,
+        )
+        self.device_menu.pack(fill="x", pady=(0, 10))
 
-        # 模型管理按钮
-        model_btn_layout = QHBoxLayout()
-        reload_btn = QPushButton("重新加载模型")
-        reload_btn.clicked.connect(self._reload_model)
-        model_btn_layout.addWidget(reload_btn)
-
-        unload_btn = QPushButton("卸载模型")
-        unload_btn.clicked.connect(self._unload_model)
-        model_btn_layout.addWidget(unload_btn)
-
-        layout.addRow("模型管理:", model_btn_layout)
-
-        return widget
-
-    def _create_advanced_tab(self) -> QWidget:
+    def _create_advanced_tab(self):
         """高级设置选项卡"""
-        widget = QWidget()
-        layout = QFormLayout(widget)
+        tab = self.tabview.add("高级设置")
 
-        # VAD 设置
-        vad_group = QGroupBox("语音活动检测 (VAD)")
-        vad_layout = QFormLayout(vad_group)
-
-        self.vad_check = QCheckBox("启用 VAD 过滤")
-        vad_layout.addRow(self.vad_check)
-
-        self.vad_slider = QSlider(Qt.Orientation.Horizontal)
-        self.vad_slider.setRange(0, 100)
-        self.vad_slider.setValue(50)
-        self.vad_label = QLabel("50%")
-        self.vad_slider.valueChanged.connect(
-            lambda v: self.vad_label.setText(f"{v}%")
+        # VAD
+        ctk.CTkLabel(tab, text="语音活动检测 (VAD)", font=("", 14, "bold")).pack(
+            anchor="w", pady=(10, 5)
         )
 
-        vad_layout.addRow("VAD 灵敏度:", self.vad_slider)
-        vad_layout.addRow("", self.vad_label)
-        layout.addRow(vad_group)
+        self.vad_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="启用 VAD 过滤", variable=self.vad_var,
+        ).pack(anchor="w", pady=(0, 5))
 
-        # 剪贴板设置
-        clip_group = QGroupBox("文本输入")
-        clip_layout = QFormLayout(clip_group)
+        ctk.CTkLabel(tab, text="VAD 灵敏度:").pack(anchor="w")
+        self.vad_threshold_var = ctk.IntVar(value=50)
+        self.vad_slider = ctk.CTkSlider(
+            tab, from_=0, to=100, variable=self.vad_threshold_var,
+            command=lambda v: self.vad_label.configure(text=f"{int(v)}%"),
+        )
+        self.vad_slider.pack(fill="x")
+        self.vad_label = ctk.CTkLabel(tab, text="50%")
+        self.vad_label.pack(anchor="w", pady=(0, 15))
 
-        self.restore_clip_check = QCheckBox("粘贴后恢复剪贴板内容")
-        clip_layout.addRow(self.restore_clip_check)
-        layout.addRow(clip_group)
+        # 文本输入
+        ctk.CTkLabel(tab, text="文本输入", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
 
-        return widget
+        self.restore_clip_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="粘贴后恢复剪贴板内容", variable=self.restore_clip_var,
+        ).pack(anchor="w", pady=(0, 15))
+
+        # Emoji
+        ctk.CTkLabel(tab, text="表情符号", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
+
+        self.emoji_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab, text="启用语义 Emoji", variable=self.emoji_var,
+        ).pack(anchor="w", pady=(0, 5))
+
+        ctk.CTkLabel(tab, text="Emoji 密度:").pack(anchor="w")
+        self.emoji_density_var = ctk.StringVar()
+        ctk.CTkOptionMenu(
+            tab, variable=self.emoji_density_var,
+            values=["低", "中", "高"],
+        ).pack(fill="x", pady=(0, 10))
 
     def _load_settings(self):
         """从配置加载设置"""
-        # 基本设置
-        idx = self.hotkey_combo.findData(self.config.get("hotkey"))
-        if idx >= 0:
-            self.hotkey_combo.setCurrentIndex(idx)
+        # 快捷键映射
+        hotkey_map = {
+            "right alt": "右 Alt", "right ctrl": "右 Ctrl",
+            "right shift": "右 Shift", "f4": "F4", "f8": "F8",
+            "f9": "F9", "f10": "F10",
+        }
+        self.hotkey_var.set(hotkey_map.get(self.config.get("hotkey"), "右 Alt"))
 
-        idx = self.mode_combo.findData(self.config.get("hotkey_mode"))
-        if idx >= 0:
-            self.mode_combo.setCurrentIndex(idx)
+        mode_map = {"hold": "按住说话", "toggle": "切换模式"}
+        self.mode_var.set(mode_map.get(self.config.get("hotkey_mode"), "按住说话"))
 
-        lang = self.config.get("language") or ""
-        idx = self.language_combo.findData(lang)
-        if idx >= 0:
-            self.language_combo.setCurrentIndex(idx)
+        lang_map = {"zh": "中文", "en": "English", "ja": "日本語", None: "自动检测", "": "自动检测"}
+        self.lang_var.set(lang_map.get(self.config.get("language"), "中文"))
 
-        self.auto_start_check.setChecked(self.config.get("auto_start", False))
-        self.minimized_check.setChecked(self.config.get("start_minimized", True))
-        self.notify_check.setChecked(self.config.get("show_notifications", True))
+        self.auto_start_var.set(self.config.get("auto_start", False))
+        self.minimized_var.set(self.config.get("start_minimized", True))
+        self.notify_var.set(self.config.get("show_notifications", True))
 
-        # 语音识别
-        idx = self.model_combo.findData(self.config.get("model_size"))
-        if idx >= 0:
-            self.model_combo.setCurrentIndex(idx)
+        # 模型
+        model_map = {
+            "tiny": "Tiny (75MB, 最快)", "base": "Base (150MB, 推荐)",
+            "small": "Small (500MB, 高精度)", "medium": "Medium (1.5GB, 专业)",
+        }
+        self.model_var.set(model_map.get(self.config.get("model_size"), "Base (150MB, 推荐)"))
 
-        idx = self.compute_combo.findData(self.config.get("compute_type"))
-        if idx >= 0:
-            self.compute_combo.setCurrentIndex(idx)
+        compute_map = {"int8": "Int8 (推荐)", "float16": "Float16", "float32": "Float32 (最准确)"}
+        self.compute_var.set(compute_map.get(self.config.get("compute_type"), "Int8 (推荐)"))
 
-        self.beam_spin.setValue(self.config.get("beam_size", 5))
+        beam = self.config.get("beam_size", 5)
+        self.beam_var.set(beam)
+        self.beam_label.configure(text=f"束搜索大小: {beam}")
 
-        device = self.config.get("audio_device")
-        if device is not None:
-            idx = self.device_combo.findData(device)
-            if idx >= 0:
-                self.device_combo.setCurrentIndex(idx)
+        self.device_var.set("默认设备")
 
-        # 高级设置
-        self.vad_check.setChecked(self.config.get("vad_filter", True))
+        # 高级
+        self.vad_var.set(self.config.get("vad_filter", True))
         threshold = int(self.config.get("vad_threshold", 0.5) * 100)
-        self.vad_slider.setValue(threshold)
-        self.restore_clip_check.setChecked(self.config.get("restore_clipboard", True))
+        self.vad_threshold_var.set(threshold)
+        self.vad_label.configure(text=f"{threshold}%")
+
+        self.restore_clip_var.set(self.config.get("restore_clipboard", True))
+        self.emoji_var.set(self.config.get("emoji_enabled", True))
+
+        density_map = {"low": "低", "medium": "中", "high": "高"}
+        self.emoji_density_var.set(density_map.get(self.config.get("emoji_density"), "中"))
 
     def _save_settings(self):
         """保存设置"""
         changes = {}
 
-        # 基本设置
-        hotkey = self.hotkey_combo.currentData()
+        # 快捷键
+        hotkey_reverse = {
+            "右 Alt": "right alt", "右 Ctrl": "right ctrl",
+            "右 Shift": "right shift", "F4": "f4", "F8": "f8",
+            "F9": "f9", "F10": "f10",
+        }
+        hotkey = hotkey_reverse.get(self.hotkey_var.get(), "right alt")
         if hotkey != self.config.get("hotkey"):
             changes["hotkey"] = hotkey
 
-        mode = self.mode_combo.currentData()
+        mode_reverse = {"按住说话": "hold", "切换模式": "toggle"}
+        mode = mode_reverse.get(self.mode_var.get(), "hold")
         if mode != self.config.get("hotkey_mode"):
             changes["hotkey_mode"] = mode
 
-        lang = self.language_combo.currentData() or None
+        lang_reverse = {"中文": "zh", "English": "en", "日本語": "ja", "自动检测": None}
+        lang = lang_reverse.get(self.lang_var.get())
         if lang != self.config.get("language"):
             changes["language"] = lang
 
-        auto_start = self.auto_start_check.isChecked()
-        if auto_start != self.config.get("auto_start"):
-            changes["auto_start"] = auto_start
+        if self.auto_start_var.get() != self.config.get("auto_start"):
+            changes["auto_start"] = self.auto_start_var.get()
+        if self.minimized_var.get() != self.config.get("start_minimized"):
+            changes["start_minimized"] = self.minimized_var.get()
+        if self.notify_var.get() != self.config.get("show_notifications"):
+            changes["show_notifications"] = self.notify_var.get()
 
-        minimized = self.minimized_check.isChecked()
-        if minimized != self.config.get("start_minimized"):
-            changes["start_minimized"] = minimized
-
-        notify = self.notify_check.isChecked()
-        if notify != self.config.get("show_notifications"):
-            changes["show_notifications"] = notify
-
-        # 语音识别
-        model = self.model_combo.currentData()
+        # 模型
+        model_reverse = {
+            "Tiny (75MB, 最快)": "tiny", "Base (150MB, 推荐)": "base",
+            "Small (500MB, 高精度)": "small", "Medium (1.5GB, 专业)": "medium",
+        }
+        model = model_reverse.get(self.model_var.get(), "base")
         if model != self.config.get("model_size"):
             changes["model_size"] = model
 
-        compute = self.compute_combo.currentData()
+        compute_reverse = {"Int8 (推荐)": "int8", "Float16": "float16", "Float32 (最准确)": "float32"}
+        compute = compute_reverse.get(self.compute_var.get(), "int8")
         if compute != self.config.get("compute_type"):
             changes["compute_type"] = compute
 
-        beam = self.beam_spin.value()
+        beam = self.beam_var.get()
         if beam != self.config.get("beam_size"):
             changes["beam_size"] = beam
 
-        device = self.device_combo.currentData()
-        if device != self.config.get("audio_device"):
-            changes["audio_device"] = device
+        # 高级
+        if self.vad_var.get() != self.config.get("vad_filter"):
+            changes["vad_filter"] = self.vad_var.get()
 
-        # 高级设置
-        vad = self.vad_check.isChecked()
-        if vad != self.config.get("vad_filter"):
-            changes["vad_filter"] = vad
-
-        vad_threshold = self.vad_slider.value() / 100
+        vad_threshold = self.vad_threshold_var.get() / 100
         if vad_threshold != self.config.get("vad_threshold"):
             changes["vad_threshold"] = vad_threshold
 
-        restore = self.restore_clip_check.isChecked()
-        if restore != self.config.get("restore_clipboard"):
-            changes["restore_clipboard"] = restore
+        if self.restore_clip_var.get() != self.config.get("restore_clipboard"):
+            changes["restore_clipboard"] = self.restore_clip_var.get()
 
-        # 保存变更
+        if self.emoji_var.get() != self.config.get("emoji_enabled"):
+            changes["emoji_enabled"] = self.emoji_var.get()
+
+        density_reverse = {"低": "low", "中": "medium", "高": "high"}
+        density = density_reverse.get(self.emoji_density_var.get(), "medium")
+        if density != self.config.get("emoji_density"):
+            changes["emoji_density"] = density
+
+        # 保存
         if changes:
             for key, value in changes.items():
                 self.config.set(key, value)
-            self.settings_changed.emit(changes)
+            if self._on_settings_changed:
+                self._on_settings_changed(changes)
 
-        self.close()
+        self.destroy()
 
     def _reset_settings(self):
         """恢复默认设置"""
-        reply = QMessageBox.question(
-            self,
-            "确认",
-            "确定要恢复所有设置为默认值吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        dialog = ctk.CTkInputDialog(
+            text="输入 'reset' 确认恢复默认设置:",
+            title="确认",
         )
-        if reply == QMessageBox.StandardButton.Yes:
+        result = dialog.get_input()
+        if result and result.strip().lower() == "reset":
             self.config.reset()
             self._load_settings()
-
-    def _reload_model(self):
-        """重新加载模型（信号由主程序处理）"""
-        self.settings_changed.emit({"_reload_model": True})
-
-    def _unload_model(self):
-        """卸载模型（信号由主程序处理）"""
-        self.settings_changed.emit({"_unload_model": True})

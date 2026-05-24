@@ -1,41 +1,30 @@
-"""系统托盘应用模块 - 提供系统托盘图标和菜单"""
+"""系统托盘应用模块 - 使用 pystray + Pillow 实现"""
 
-import io
+import threading
 from enum import Enum
 from typing import Callable, Optional
 
-from PyQt6.QtWidgets import (
-    QApplication,
-    QSystemTrayIcon,
-    QMenu,
-    QStyle,
-)
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor, QAction
-from PyQt6.QtCore import Qt, pyqtSignal, QObject
+from PIL import Image, ImageDraw
+import pystray
 
 
 class AppState(Enum):
     """应用状态枚举"""
-    IDLE = "idle"          # 空闲
-    RECORDING = "recording"  # 录音中
-    PROCESSING = "processing"  # 识别中
-    DISABLED = "disabled"  # 已禁用
+    IDLE = "idle"
+    RECORDING = "recording"
+    PROCESSING = "processing"
+    DISABLED = "disabled"
 
 
-class TrayApp(QObject):
+class TrayApp:
     """系统托盘应用，管理托盘图标和菜单"""
 
-    # 信号定义（用于跨线程通信）
-    settings_requested = pyqtSignal()
-    quit_requested = pyqtSignal()
-    toggle_service = pyqtSignal(bool)
-
-    # 图标颜色配置
+    # 图标颜色配置 (R, G, B)
     COLORS = {
-        AppState.IDLE: QColor(100, 200, 100),       # 绿色 - 空闲
-        AppState.RECORDING: QColor(220, 50, 50),     # 红色 - 录音中
-        AppState.PROCESSING: QColor(50, 150, 220),   # 蓝色 - 识别中
-        AppState.DISABLED: QColor(150, 150, 150),    # 灰色 - 已禁用
+        AppState.IDLE: (100, 200, 100),       # 绿色 - 空闲
+        AppState.RECORDING: (220, 50, 50),     # 红色 - 录音中
+        AppState.PROCESSING: (50, 150, 220),   # 蓝色 - 识别中
+        AppState.DISABLED: (150, 150, 150),    # 灰色 - 已禁用
     }
 
     TOOLTIPS = {
@@ -52,156 +41,147 @@ class TrayApp(QObject):
         on_quit: Optional[Callable] = None,
         on_toggle: Optional[Callable[[bool], None]] = None,
     ):
-        super().__init__()
         self._hotkey = hotkey
         self._state = AppState.IDLE
         self._service_active = True
 
-        # 连接信号
-        if on_settings:
-            self.settings_requested.connect(on_settings)
-        if on_quit:
-            self.quit_requested.connect(on_quit)
-        if on_toggle:
-            self.toggle_service.connect(on_toggle)
+        self._on_settings = on_settings
+        self._on_quit = on_quit
+        self._on_toggle = on_toggle
 
-        self._tray_icon: Optional[QSystemTrayIcon] = None
-        self._menu: Optional[QMenu] = None
-        self._toggle_action: Optional[QAction] = None
+        self._icon: Optional[pystray.Icon] = None
+        self._status_text = "状态: 就绪"
 
-    def _create_icon(self, state: AppState) -> QIcon:
-        """生成指定状态的图标"""
-        pixmap = QPixmap(32, 32)
-        pixmap.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    def _create_icon(self, state: AppState) -> Image.Image:
+        """使用 Pillow 生成指定状态的图标"""
+        size = 64
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
 
         color = self.COLORS.get(state, self.COLORS[AppState.IDLE])
 
         # 绘制圆形背景
-        painter.setBrush(color)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(2, 2, 28, 28)
+        margin = 4
+        draw.ellipse(
+            [margin, margin, size - margin, size - margin],
+            fill=color + (255,),
+        )
 
-        # 绘制麦克风图标
-        painter.setPen(QColor(255, 255, 255))
-        painter.setBrush(QColor(255, 255, 255))
+        # 绘制白色麦克风图标
+        white = (255, 255, 255, 255)
+        cx, cy = size // 2, size // 2
 
         if state == AppState.RECORDING:
-            # 录音状态 - 绘制实心圆点
-            painter.drawEllipse(10, 10, 12, 12)
+            # 录音状态 - 实心圆点
+            r = 10
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=white)
         elif state == AppState.PROCESSING:
-            # 识别中 - 绘制旋转线条
-            painter.drawRect(12, 6, 3, 20)
-            painter.drawRect(17, 10, 3, 12)
-            painter.drawRect(7, 10, 3, 12)
+            # 识别中 - 音波线条
+            draw.rectangle([cx - 2, cy - 16, cx + 2, cy + 16], fill=white)
+            draw.rectangle([cx - 10, cy - 10, cx - 6, cy + 10], fill=white)
+            draw.rectangle([cx + 6, cy - 10, cx + 10, cy + 10], fill=white)
         else:
-            # 空闲/禁用 - 绘制麦克风形状
-            painter.drawEllipse(11, 5, 10, 14)
-            painter.drawRect(14, 19, 4, 5)
-            painter.drawRect(10, 24, 12, 2)
+            # 空闲/禁用 - 麦克风形状
+            draw.ellipse([cx - 7, cy - 14, cx + 7, cy + 4], fill=white)
+            draw.rectangle([cx - 2, cy + 4, cx + 2, cy + 12], fill=white)
+            draw.rectangle([cx - 8, cy + 12, cx + 8, cy + 16], fill=white)
 
-        painter.end()
-        return QIcon(pixmap)
+        return img
 
-    def setup(self):
-        """初始化并显示托盘图标"""
-        self._tray_icon = QSystemTrayIcon()
-        self._update_icon()
+    def _build_menu(self) -> pystray.Menu:
+        """构建右键菜单"""
+        return pystray.Menu(
+            pystray.MenuItem(
+                lambda item: self._status_text,
+                None,
+                enabled=False,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                lambda item: "启动服务" if not self._service_active else "停止服务",
+                self._on_toggle_service,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "设置...",
+                self._handle_settings,
+                default=True,  # 双击触发此项
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "退出",
+                self._handle_quit,
+            ),
+        )
 
-        # 创建右键菜单
-        self._menu = QMenu()
+    def _handle_settings(self, icon, item):
+        """处理设置菜单点击"""
+        if self._on_settings:
+            self._on_settings()
 
-        # 状态显示（不可点击）
-        status_action = self._menu.addAction("状态: 就绪")
-        status_action.setEnabled(False)
-        self._menu.addSeparator()
+    def _handle_quit(self, icon, item):
+        """处理退出菜单点击"""
+        if self._on_quit:
+            self._on_quit()
 
-        # 开始/停止服务
-        self._toggle_action = self._menu.addAction("停止服务")
-        self._toggle_action.triggered.connect(self._on_toggle_service)
-
-        self._menu.addSeparator()
-
-        # 设置
-        settings_action = self._menu.addAction("设置...")
-        settings_action.triggered.connect(self.settings_requested.emit)
-
-        self._menu.addSeparator()
-
-        # 退出
-        quit_action = self._menu.addAction("退出")
-        quit_action.triggered.connect(self.quit_requested.emit)
-
-        self._tray_icon.setContextMenu(self._menu)
-        self._tray_icon.show()
-
-        # 双击托盘图标打开设置
-        self._tray_icon.activated.connect(self._on_activated)
-
-    def _update_icon(self):
-        """更新托盘图标"""
-        if self._tray_icon:
-            icon = self._create_icon(self._state)
-            self._tray_icon.setIcon(icon)
-
-            tooltip = self.TOOLTIPS.get(self._state, "")
-            if self._state == AppState.IDLE:
-                tooltip = tooltip.format(hotkey=self._hotkey)
-            self._tray_icon.setToolTip(tooltip)
-
-    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason):
-        """托盘图标激活事件"""
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.settings_requested.emit()
-
-    def _on_toggle_service(self):
+    def _on_toggle_service(self, icon, item):
         """切换服务状态"""
         self._service_active = not self._service_active
-        self._toggle_action.setText(
-            "停止服务" if self._service_active else "启动服务"
-        )
         if not self._service_active:
             self.set_state(AppState.DISABLED)
         else:
             self.set_state(AppState.IDLE)
-        self.toggle_service.emit(self._service_active)
+        if self._on_toggle:
+            self._on_toggle(self._service_active)
+
+    def setup(self):
+        """初始化并显示托盘图标"""
+        icon_image = self._create_icon(self._state)
+        tooltip = self.TOOLTIPS.get(self._state, "").format(hotkey=self._hotkey)
+
+        self._icon = pystray.Icon(
+            name="voice_input",
+            icon=icon_image,
+            title=tooltip,
+            menu=self._build_menu(),
+        )
+
+        # pystray.run() 会阻塞，所以在后台线程运行
+        threading.Thread(target=self._icon.run, daemon=True).start()
 
     def set_state(self, state: AppState):
         """设置应用状态（更新图标和提示）"""
         self._state = state
-        self._update_icon()
 
-        # 更新菜单中的状态文本
-        if self._menu:
-            status_texts = {
-                AppState.IDLE: "状态: 就绪",
-                AppState.RECORDING: "状态: 录音中...",
-                AppState.PROCESSING: "状态: 识别中...",
-                AppState.DISABLED: "状态: 已停止",
-            }
-            actions = self._menu.actions()
-            if actions:
-                actions[0].setText(status_texts.get(state, "状态: 未知"))
+        if self._icon:
+            self._icon.icon = self._create_icon(state)
+            tooltip = self.TOOLTIPS.get(state, "")
+            if state == AppState.IDLE:
+                tooltip = tooltip.format(hotkey=self._hotkey)
+            self._icon.title = tooltip
+
+        # 更新状态文本
+        status_map = {
+            AppState.IDLE: "状态: 就绪",
+            AppState.RECORDING: "状态: 录音中...",
+            AppState.PROCESSING: "状态: 识别中...",
+            AppState.DISABLED: "状态: 已停止",
+        }
+        self._status_text = status_map.get(state, "状态: 未知")
 
     def show_notification(self, title: str, message: str, duration: int = 3000):
         """显示系统通知"""
-        if self._tray_icon and self._tray_icon.supportsMessages():
-            self._tray_icon.showMessage(
-                title,
-                message,
-                QSystemTrayIcon.MessageIcon.Information,
-                duration,
-            )
+        if self._icon:
+            self._icon.notify(message, title)
 
     def update_hotkey_display(self, hotkey: str):
         """更新快捷键显示文本"""
         self._hotkey = hotkey
-        self._update_icon()
+        if self._icon and self._state == AppState.IDLE:
+            self._icon.title = self.TOOLTIPS[AppState.IDLE].format(hotkey=hotkey)
 
     def cleanup(self):
         """清理托盘图标"""
-        if self._tray_icon:
-            self._tray_icon.hide()
-            self._tray_icon.deleteLater()
+        if self._icon:
+            self._icon.stop()
+            self._icon = None

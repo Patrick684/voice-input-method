@@ -1,12 +1,12 @@
 """语音输入法主程序 - 集成所有模块的应用入口"""
 
 import sys
+import signal
 import logging
-from enum import Enum
+import threading
+import queue
+import time
 from typing import Optional
-
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, pyqtSlot
 
 from config import Config
 from audio.recorder import AudioRecorder
@@ -28,70 +28,6 @@ logging.basicConfig(
 logger = logging.getLogger("VoiceInput")
 
 
-class AppWorker(QObject):
-    """后台工作线程，处理语音识别"""
-
-    transcription_complete = pyqtSignal(str)  # 识别完成
-    transcription_failed = pyqtSignal(str)    # 识别失败
-    model_loaded = pyqtSignal()               # 模型加载完成
-    model_load_failed = pyqtSignal(str)       # 模型加载失败
-
-    def __init__(
-        self,
-        engine: WhisperEngine,
-        config: Config,
-        hotword_manager: HotwordManager,
-        punctuation_processor: PunctuationProcessor,
-        emoji_injector: EmojiInjector,
-    ):
-        super().__init__()
-        self.engine = engine
-        self.config = config
-        self.hotword_manager = hotword_manager
-        self.punctuation_processor = punctuation_processor
-        self.emoji_injector = emoji_injector
-
-    @pyqtSlot()
-    def load_model(self):
-        """在后台线程加载模型"""
-        try:
-            self.engine.load_model(on_progress=lambda msg: logger.info(msg))
-            self.model_loaded.emit()
-        except Exception as e:
-            self.model_load_failed.emit(str(e))
-
-    @pyqtSlot(object)
-    def transcribe(self, audio_data):
-        """在后台线程执行语音识别"""
-        try:
-            # 构建热词 initial_prompt
-            initial_prompt = self.hotword_manager.build_initial_prompt(
-                weight=self.config.get("hotword_weight", 1.5)
-            )
-
-            text = self.engine.transcribe(
-                audio_data,
-                language=self.config.get("language"),
-                initial_prompt=initial_prompt,
-                beam_size=self.config.get("beam_size", 5),
-                vad_filter=self.config.get("vad_filter", True),
-                vad_threshold=self.config.get("vad_threshold", 0.5),
-            )
-
-            if text:
-                # 后处理流水线: 标点优化 -> emoji 注入
-                text = self.punctuation_processor.process(
-                    text, language=self.config.get("language")
-                )
-                text = self.emoji_injector.process(text)
-
-                self.transcription_complete.emit(text)
-            else:
-                self.transcription_failed.emit("未能识别出文字")
-        except Exception as e:
-            self.transcription_failed.emit(str(e))
-
-
 class VoiceInputApp:
     """语音输入法主应用"""
 
@@ -102,6 +38,15 @@ class VoiceInputApp:
         # 应用状态
         self._state = AppState.IDLE
         self._service_active = True
+
+        # 线程通信
+        self._task_queue: queue.Queue = queue.Queue()
+        self._result_queue: queue.Queue = queue.Queue()
+        self._stop_event = threading.Event()
+        self._worker_thread: Optional[threading.Thread] = None
+
+        # 设置窗口引用
+        self._settings_window = None
 
         # 初始化各模块
         self._init_modules()
@@ -142,7 +87,7 @@ class VoiceInputApp:
             restore_clipboard=self.config.get("restore_clipboard", True),
         )
 
-        # 快捷键管理器（回调稍后设置）
+        # 快捷键管理器
         self.hotkey_manager = HotkeyManager(
             hotkey=self.config.get("hotkey", "right alt"),
             mode=self.config.get("hotkey_mode", "hold"),
@@ -153,10 +98,6 @@ class VoiceInputApp:
 
     def run(self):
         """启动应用"""
-        # 创建 Qt 应用
-        self.app = QApplication(sys.argv)
-        self.app.setQuitOnLastWindowClosed(False)
-
         # 获取快捷键显示名称
         hotkey_display = self._get_hotkey_display()
 
@@ -169,8 +110,8 @@ class VoiceInputApp:
         )
         self.tray.setup()
 
-        # 创建工作线程
-        self._setup_worker()
+        # 启动后台 worker 线程
+        self._start_worker()
 
         # 注册快捷键
         self.hotkey_manager.register()
@@ -186,36 +127,113 @@ class VoiceInputApp:
                 f"已启动，按住 {hotkey_display} 开始说话",
             )
 
-        # 运行应用事件循环
-        return self.app.exec()
+        # 主线程循环：处理结果 + 等待退出信号
+        signal.signal(signal.SIGINT, lambda *_: self._quit())
 
-    def _setup_worker(self):
-        """设置后台工作线程"""
-        self.worker_thread = QThread()
-        self.worker = AppWorker(
-            self.engine,
-            self.config,
-            self.hotword_manager,
-            self.punctuation_processor,
-            self.emoji_injector,
+        try:
+            while not self._stop_event.is_set():
+                # 非阻塞检查结果队列
+                try:
+                    result_type, result_data = self._result_queue.get(timeout=0.5)
+                    self._handle_result(result_type, result_data)
+                except queue.Empty:
+                    pass
+        except KeyboardInterrupt:
+            pass
+
+        self._cleanup()
+
+    def _start_worker(self):
+        """启动后台工作线程"""
+        self._stop_event.clear()
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop, daemon=True, name="WorkerThread"
         )
-        self.worker.moveToThread(self.worker_thread)
+        self._worker_thread.start()
 
-        # 连接信号
-        self.worker.transcription_complete.connect(self._on_transcription_complete)
-        self.worker.transcription_failed.connect(self._on_transcription_failed)
-        self.worker.model_loaded.connect(self._on_model_loaded)
-        self.worker.model_load_failed.connect(self._on_model_load_failed)
+    def _worker_loop(self):
+        """Worker 线程主循环"""
+        logger.info("Worker 线程已启动")
 
-        self.worker_thread.start()
+        while not self._stop_event.is_set():
+            try:
+                task_type, task_data = self._task_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
 
-    def _load_model_async(self):
-        """异步加载模型"""
-        from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
-        QMetaObject.invokeMethod(self.worker, "load_model", Qt.ConnectionType.QueuedConnection)
+            if task_type == "load_model":
+                try:
+                    self.engine.load_model(on_progress=lambda msg: logger.info(msg))
+                    self._result_queue.put(("model_loaded", None))
+                except Exception as e:
+                    self._result_queue.put(("model_load_failed", str(e)))
+
+            elif task_type == "transcribe":
+                try:
+                    audio_data = task_data
+
+                    # 构建热词 initial_prompt
+                    initial_prompt = self.hotword_manager.build_initial_prompt(
+                        weight=self.config.get("hotword_weight", 1.5)
+                    )
+
+                    text = self.engine.transcribe(
+                        audio_data,
+                        language=self.config.get("language"),
+                        initial_prompt=initial_prompt,
+                        beam_size=self.config.get("beam_size", 5),
+                        vad_filter=self.config.get("vad_filter", True),
+                        vad_threshold=self.config.get("vad_threshold", 0.5),
+                    )
+
+                    if text:
+                        # 后处理流水线: 标点优化 -> emoji 注入
+                        text = self.punctuation_processor.process(
+                            text, language=self.config.get("language")
+                        )
+                        text = self.emoji_injector.process(text)
+                        self._result_queue.put(("transcription_complete", text))
+                    else:
+                        self._result_queue.put(("transcription_failed", "未能识别出文字"))
+
+                except Exception as e:
+                    self._result_queue.put(("transcription_failed", str(e)))
+
+        logger.info("Worker 线程已退出")
+
+    def _handle_result(self, result_type: str, data):
+        """在主线程中处理 worker 返回的结果"""
+        if result_type == "transcription_complete":
+            logger.info(f"识别结果: {data}")
+            success = self.injector.inject_text(data)
+            if success:
+                logger.info("文本输入成功")
+            else:
+                logger.error("文本输入失败")
+                if self.config.get("show_notifications", True):
+                    self.tray.show_notification("语音输入法", "文本输入失败")
+            self._state = AppState.IDLE
+            self.tray.set_state(AppState.IDLE)
+
+        elif result_type == "transcription_failed":
+            logger.error(f"识别失败: {data}")
+            if self.config.get("show_notifications", True):
+                self.tray.show_notification("语音输入法", f"识别失败: {data}")
+            self._state = AppState.IDLE
+            self.tray.set_state(AppState.IDLE)
+
+        elif result_type == "model_loaded":
+            logger.info("模型加载完成")
+
+        elif result_type == "model_load_failed":
+            logger.error(f"模型加载失败: {data}")
+            if self.config.get("show_notifications", True):
+                self.tray.show_notification("语音输入法", f"模型加载失败: {data}")
+
+    # ---- 录音回调 ----
 
     def _on_recording_start(self):
-        """开始录音回调"""
+        """开始录音回调（从快捷键线程调用）"""
         if not self._service_active:
             return
 
@@ -232,11 +250,10 @@ class VoiceInputApp:
             self.tray.set_state(AppState.IDLE)
 
     def _on_recording_stop(self):
-        """停止录音回调"""
+        """停止录音回调（从快捷键线程调用）"""
         if self._state != AppState.RECORDING:
             return
 
-        # 停止录音获取音频数据
         audio_data = self.recorder.stop_recording()
 
         if audio_data is None or len(audio_data) < 1600:
@@ -248,18 +265,11 @@ class VoiceInputApp:
         duration = self.recorder.get_audio_duration(audio_data)
         logger.info(f"录音完成，时长: {duration:.1f}秒")
 
-        # 切换到识别状态
         self._state = AppState.PROCESSING
         self.tray.set_state(AppState.PROCESSING)
 
-        # 在后台线程执行识别
-        from PyQt6.QtCore import QMetaObject, Qt, Q_ARG
-        QMetaObject.invokeMethod(
-            self.worker,
-            "transcribe",
-            Qt.ConnectionType.QueuedConnection,
-            Q_ARG(object, audio_data),
-        )
+        # 将识别任务放入队列
+        self._task_queue.put(("transcribe", audio_data))
 
     def _on_recording_cancel(self):
         """取消录音回调"""
@@ -268,59 +278,54 @@ class VoiceInputApp:
         self.tray.set_state(AppState.IDLE)
         logger.info("录音已取消")
 
-    def _on_transcription_complete(self, text: str):
-        """识别完成回调"""
-        logger.info(f"识别结果: {text}")
+    # ---- 模型加载 ----
 
-        # 注入文本到当前窗口
-        success = self.injector.inject_text(text)
+    def _load_model_async(self):
+        """异步加载模型"""
+        self._task_queue.put(("load_model", None))
 
-        if success:
-            logger.info("文本输入成功")
-        else:
-            logger.error("文本输入失败")
-            if self.config.get("show_notifications", True):
-                self.tray.show_notification("语音输入法", "文本输入失败")
-
-        # 恢复到空闲状态
-        self._state = AppState.IDLE
-        self.tray.set_state(AppState.IDLE)
-
-    def _on_transcription_failed(self, error: str):
-        """识别失败回调"""
-        logger.error(f"识别失败: {error}")
-
-        if self.config.get("show_notifications", True):
-            self.tray.show_notification("语音输入法", f"识别失败: {error}")
-
-        self._state = AppState.IDLE
-        self.tray.set_state(AppState.IDLE)
-
-    def _on_model_loaded(self):
-        """模型加载完成回调"""
-        logger.info("模型加载完成")
-
-    def _on_model_load_failed(self, error: str):
-        """模型加载失败回调"""
-        logger.error(f"模型加载失败: {error}")
-        if self.config.get("show_notifications", True):
-            self.tray.show_notification("语音输入法", f"模型加载失败: {error}")
+    # ---- 设置窗口 ----
 
     def _show_settings(self):
         """显示设置窗口"""
-        if not hasattr(self, "_settings_window") or self._settings_window is None:
-            self._settings_window = SettingsWindow(self.config)
-            self._settings_window.settings_changed.connect(self._on_settings_changed)
+        import customtkinter as ctk
 
-        self._settings_window.show()
-        self._settings_window.raise_()
-        self._settings_window.activateWindow()
+        # 如果窗口已存在且还在显示，直接置顶
+        if self._settings_window is not None:
+            try:
+                self._settings_window.focus()
+                return
+            except Exception:
+                self._settings_window = None
+
+        self._settings_window = SettingsWindow(
+            self.config,
+            on_settings_changed=self._on_settings_changed,
+        )
+        self._settings_window.protocol("WM_DELETE_WINDOW", self._on_settings_closed)
+
+        # 让 CustomTkinter 事件循环运行（非阻塞）
+        self._settings_window.after(100, self._pump_tk_events)
+
+    def _pump_tk_events(self):
+        """持续处理 CustomTkinter 事件"""
+        if self._settings_window is not None:
+            try:
+                self._settings_window.update_idletasks()
+                self._settings_window.after(100, self._pump_tk_events)
+            except Exception:
+                self._settings_window = None
+
+    def _on_settings_closed(self):
+        """设置窗口关闭"""
+        if self._settings_window:
+            self._settings_window.destroy()
+            self._settings_window = None
 
     def _on_settings_changed(self, changes: dict):
         """处理设置变更"""
         logger.info(f"设置变更: {list(changes.keys())}")
 
-        # 处理特殊操作
         if changes.pop("_reload_model", False):
             self.engine.change_model(self.config.get("model_size"))
             self._load_model_async()
@@ -356,6 +361,8 @@ class VoiceInputApp:
         if "emoji_density" in changes:
             self.emoji_injector.set_density(changes["emoji_density"])
 
+    # ---- 服务控制 ----
+
     def _toggle_service(self, active: bool):
         """切换服务开关"""
         self._service_active = active
@@ -374,27 +381,28 @@ class VoiceInputApp:
     def _quit(self):
         """退出应用"""
         logger.info("正在退出...")
+        self._stop_event.set()
 
+    def _cleanup(self):
+        """清理资源"""
         # 注销快捷键
         self.hotkey_manager.unregister()
 
-        # 停止工作线程
-        if hasattr(self, "worker_thread"):
-            self.worker_thread.quit()
-            self.worker_thread.wait(3000)
+        # 停止 worker 线程
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=3)
 
         # 清理托盘图标
         if hasattr(self, "tray"):
             self.tray.cleanup()
 
-        # 退出应用
-        self.app.quit()
+        logger.info("已退出")
 
 
 def main():
     """应用入口"""
     app = VoiceInputApp()
-    sys.exit(app.run())
+    app.run()
 
 
 if __name__ == "__main__":
