@@ -8,8 +8,11 @@ os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
 from huggingface_hub import snapshot_download
 
-# 下载路径 保持 你原来的不变
-CACHE_DIR = r"C:\Users\16574\AppData\Roaming\VoiceInput\Models"
+# 下载路径：优先使用命令行参数，否则使用 APPDATA 默认路径
+if len(os.sys.argv) > 1:
+    CACHE_DIR = os.sys.argv[1]
+else:
+    CACHE_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceInput", "Models")
 
 # ======================
 # 下载 small 模型
@@ -19,7 +22,6 @@ print("开始下载 faster-whisper-small 模型（国内镜像加速）...")
 model_path = snapshot_download(
     "Systran/faster-whisper-small",
     cache_dir=CACHE_DIR,
-    local_dir_use_symlinks=False,
     resume_download=True      # 支持断点续传
 )
 
