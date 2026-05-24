@@ -1,0 +1,58 @@
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'requirements.txt'
+      - '.github/workflows/python-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.py'
+      - 'requirements.txt'
+
+jobs:
+  lint-and-test:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          pip install -r requirements.txt
+
+      - name: Lint with ruff
+        run: |
+          ruff check . --select E,F,W --ignore E501
+
+      - name: Format check with ruff
+        run: |
+          ruff format --check .
+
+      - name: Import verification
+        run: |
+          python -c "from config import Config; print('config OK')"
+          python -c "from audio.recorder import AudioRecorder; print('audio OK')"
+          python -c "from engine.whisper_engine import WhisperEngine; print('engine OK')"
+          python -c "from engine.hotword_manager import HotwordManager; print('hotword OK')"
+          python -c "from engine.punctuation_processor import PunctuationProcessor; print('punctuation OK')"
+          python -c "from engine.emoji_injector import EmojiInjector; print('emoji OK')"
+          python -c "from input.text_injector import TextInjector; print('input OK')"
+          python -c "from hotkey.hotkey_manager import HotkeyManager; print('hotkey OK')"
+          python -c "from ui.tray_app import TrayApp; print('tray OK')"
+          python -c "from ui.settings_window import SettingsWindow; print('settings OK')"
+          python -c "import main; print('main OK')"

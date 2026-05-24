@@ -1,0 +1,58 @@
+name: Flutter CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/flutter-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Only run if mobile/ directory exists
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && contains(github.event.pull_request.changed_files_url, 'mobile'))
+
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if mobile directory exists
+        id: check
+        run: |
+          if [ -d "mobile" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Flutter
+        if: steps.check.outputs.exists == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        if: steps.check.outputs.exists == 'true'
+        run: flutter pub get
+
+      - name: Analyze code
+        if: steps.check.outputs.exists == 'true'
+        run: flutter analyze --no-fatal-infos
+
+      - name: Format check
+        if: steps.check.outputs.exists == 'true'
+        run: dart format --set-exit-if-changed .
+
+      - name: Run tests
+        if: steps.check.outputs.exists == 'true'
+        run: flutter test
