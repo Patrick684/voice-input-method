@@ -1,9 +1,13 @@
 """Whisper 语音识别引擎 - 基于 faster-whisper 实现本地语音转文字"""
 
+import logging
+import os
 import threading
 import numpy as np
 from typing import Callable, Optional
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class WhisperEngine:
@@ -81,14 +85,86 @@ class WhisperEngine:
                 on_progress("模型加载完成")
 
         except Exception as e:
+            error_msg = str(e)
             if on_progress:
-                on_progress(f"模型加载失败: {e}")
-            raise RuntimeError(f"无法加载 Whisper 模型: {e}")
+                on_progress(f"模型加载失败: {error_msg}")
+            # 清理可能不完整的缓存
+            self._cleanup_incomplete_cache()
+            raise RuntimeError(f"无法加载 Whisper 模型: {error_msg}")
+
+    def _cleanup_incomplete_cache(self):
+        """清理不完整的模型缓存文件"""
+        if not self.cache_dir or not self.cache_dir.exists():
+            return
+        import glob
+        for pattern in ["**/*.incomplete", "**/*.part"]:
+            for f in glob.glob(str(self.cache_dir / pattern), recursive=True):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
 
     def unload_model(self):
         """卸载模型以释放内存"""
         with self._lock:
             self._model = None
+
+    # 语言对应的引导提示词（引导 Whisper 输出正确的文字风格）
+    LANGUAGE_PROMPTS = {
+        "zh": "以下是普通话的句子，使用简体中文转录。",
+        "en": "The following is English speech.",
+        "ja": "以下は日本語の音声です。",
+    }
+
+    @staticmethod
+    def _normalize_audio(audio: np.ndarray, target_peak: float = 0.8, max_gain: float = 10.0) -> np.ndarray:
+        """
+        归一化音频电平，确保 Whisper 获得足够响的输入
+
+        Args:
+            audio: 原始音频数据
+            target_peak: 目标峰值电平 (0.0~1.0)
+            max_gain: 最大增益倍数，防止放大底噪
+
+        Returns:
+            归一化后的音频
+        """
+        peak = np.max(np.abs(audio))
+        if peak < 0.001:  # 几乎无声，不处理
+            return audio
+
+        if peak < target_peak * 0.5:  # 峰值低于目标的一半时，进行增益补偿
+            gain = min(target_peak / peak, max_gain)  # 限制最大增益，防止放大底噪
+            audio = audio * gain
+            logger.info(f"音频增益: {gain:.1f}x (原始峰值={peak:.4f}, 上限={max_gain}x)")
+
+        return audio
+
+    def _build_prompt(self, language: Optional[str], user_prompt: Optional[str]) -> Optional[str]:
+        """
+        构建组合引导提示词，融合语言引导和用户热词
+
+        Args:
+            language: 语言代码
+            user_prompt: 用户提供的热词 prompt
+
+        Returns:
+            组合后的 prompt，或 None
+        """
+        parts = []
+
+        # 添加语言引导（确保简体中文输出等）
+        if language and language in self.LANGUAGE_PROMPTS:
+            parts.append(self.LANGUAGE_PROMPTS[language])
+
+        # 添加用户热词
+        if user_prompt:
+            parts.append(user_prompt)
+
+        if not parts:
+            return None
+
+        return " ".join(parts)
 
     def transcribe(
         self,
@@ -128,11 +204,19 @@ class WhisperEngine:
             if len(audio) < 1600:  # 少于 0.1 秒
                 return None
 
+            # 归一化音频电平（解决麦克风增益不足导致识别率低的问题）
+            audio = self._normalize_audio(audio)
+
+            # 构建引导提示词（用户热词 + 语言引导，确保简体中文输出）
+            combined_prompt = self._build_prompt(language, initial_prompt)
+            if combined_prompt:
+                logger.info(f"识别引导: {combined_prompt[:50]}...")
+
             # 执行识别
             segments, info = self._model.transcribe(
                 audio,
                 language=language,
-                initial_prompt=initial_prompt,
+                initial_prompt=combined_prompt,
                 beam_size=beam_size,
                 vad_filter=vad_filter,
                 vad_parameters={"threshold": vad_threshold} if vad_filter else None,

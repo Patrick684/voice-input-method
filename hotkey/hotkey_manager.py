@@ -50,6 +50,9 @@ class HotkeyManager:
         self._min_hold_duration = 0.15  # 最短按住时间（秒），防止误触
         self._debounce_lock = threading.Lock()
 
+        # 启动保护：注册后短暂忽略事件，避免 keyboard 库的合成事件误触
+        self._ready_time: float = 0
+
     @property
     def is_recording(self) -> bool:
         return self._recording
@@ -66,6 +69,8 @@ class HotkeyManager:
             keyboard.add_hotkey(self.hotkey, self._on_toggle)
 
         self._registered = True
+        # 启动保护：注册后 0.5 秒内忽略所有事件，避免 keyboard 库合成事件误触
+        self._ready_time = time.time() + 0.5
         self._active = True
 
     def unregister(self):
@@ -89,6 +94,10 @@ class HotkeyManager:
         if not self._active:
             return
 
+        # 启动保护期内忽略事件
+        if time.time() < self._ready_time:
+            return
+
         with self._debounce_lock:
             if self._recording:
                 return
@@ -105,6 +114,10 @@ class HotkeyManager:
     def _on_key_release(self, event):
         """按住模式 - 按键释放处理"""
         if not self._active or not self._recording:
+            return
+
+        # 启动保护期内忽略事件
+        if time.time() < self._ready_time:
             return
 
         with self._debounce_lock:

@@ -1,5 +1,6 @@
 """语音输入法主程序 - 集成所有模块的应用入口"""
 
+import os
 import sys
 import signal
 import logging
@@ -7,6 +8,10 @@ import threading
 import queue
 import time
 from typing import Optional
+
+# 配置 HuggingFace 国内镜像（必须在 import faster-whisper/huggingface_hub 之前设置）
+if not os.environ.get("HF_ENDPOINT"):
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 from config import Config
 from audio.recorder import AudioRecorder

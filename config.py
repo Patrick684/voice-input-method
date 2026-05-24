@@ -15,7 +15,7 @@ class Config:
         "hotkey_mode": "hold",  # hold: 按住录音, toggle: 切换录音
 
         # 语音识别设置
-        "model_size": "base",  # tiny, base, small, medium, large
+        "model_size": "small",  # tiny, base, small, medium, large
         "language": "zh",  # zh: 中文, en: 英文, None: 自动检测
         "beam_size": 5,
         "compute_type": "int8",  # int8, float16, float32
