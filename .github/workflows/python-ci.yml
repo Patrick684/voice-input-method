@@ -45,3 +45,5 @@ jobs:
 
       - name: Import verification
         run: python .github/scripts/verify_imports.py
+        env:
+          PYTHONIOENCODING: utf-8
