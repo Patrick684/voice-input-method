@@ -27,6 +27,7 @@ Thumbs.db
 models/
 *.onnx
 *.bin
+debug_output.txt
 
 # Qoder IDE
 .qoder/

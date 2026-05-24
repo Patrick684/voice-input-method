@@ -1,11 +1,14 @@
 """全局快捷键管理模块 - 使用 keyboard 库监听全局按键"""
 
+import logging
 import time
 import threading
 import winsound
-from typing import Callable, Optional
+from typing import Callable, Optional, Set
 
 import keyboard
+
+logger = logging.getLogger(__name__)
 
 
 class HotkeyManager:
@@ -16,6 +19,23 @@ class HotkeyManager:
     BEEP_START_DURATION = 100
     BEEP_STOP_FREQ = 440
     BEEP_STOP_DURATION = 100
+
+    # 需要扫描码过滤的按键及其有效扫描码集合
+    # Windows 下 keyboard 库无法可靠区分左右修饰键，通过扫描码解决
+    SCAN_CODE_FILTERS = {
+        "right alt": {312},       # 右Alt: scan code 56 + extended flag = 312
+        "left alt": {56},         # 左Alt: scan code 56
+        "right ctrl": {285},      # 右Ctrl: scan code 29 + extended flag = 285
+        "left ctrl": {29},        # 左Ctrl: scan code 29
+        "right shift": {54},      # 右Shift: scan code 54
+        "left shift": {42},       # 左Shift: scan code 42
+    }
+
+    # 左右键扫描码相同时，回退到 event.name 判断
+    AMBIGUOUS_SCAN_CODES = {
+        56: {"right alt", "left alt"},    # Alt 键共用扫描码 56
+        29: {"right ctrl", "left ctrl"},  # Ctrl 键共用扫描码 29
+    }
 
     def __init__(
         self,
@@ -89,9 +109,49 @@ class HotkeyManager:
         self._registered = False
         self._active = False
 
+    def _is_target_key(self, event) -> bool:
+        """
+        检查事件是否是目标按键（通过扫描码过滤，解决左右修饰键混淆问题）
+
+        keyboard 库在 Windows 下对左右 Alt/Ctrl/Shift 的区分不可靠，
+        通过检查硬件扫描码可以精确过滤。
+        """
+        hotkey_lower = self.hotkey.lower()
+        valid_codes = self.SCAN_CODE_FILTERS.get(hotkey_lower)
+
+        if valid_codes is None:
+            # 不需要扫描码过滤的按键（如 F4、F9 等）
+            return True
+
+        scan_code = getattr(event, "scan_code", None)
+        event_name = getattr(event, "name", "").lower()
+
+        if scan_code is None:
+            return True  # 无扫描码信息时不拦截
+
+        # 检查扫描码是否匹配
+        is_match = scan_code in valid_codes
+
+        # 当扫描码与左右键都相同时（无 extended flag），回退到 event.name 判断
+        if not is_match:
+            ambiguous_keys = self.AMBIGUOUS_SCAN_CODES.get(scan_code)
+            if ambiguous_keys and hotkey_lower in ambiguous_keys:
+                is_match = (event_name == hotkey_lower)
+                if not is_match:
+                    logger.debug(f"扫描码模糊过滤: scan_code={scan_code}, name={event_name}, 期望={hotkey_lower}")
+                return is_match
+
+        if not is_match:
+            logger.debug(f"扫描码过滤: scan_code={scan_code}, 期望={valid_codes}, key={event_name}")
+        return is_match
+
     def _on_key_press(self, event):
         """按住模式 - 按键按下处理"""
         if not self._active:
+            return
+
+        # 扫描码过滤：排除左 Alt 等混淆按键
+        if not self._is_target_key(event):
             return
 
         # 启动保护期内忽略事件
@@ -114,6 +174,10 @@ class HotkeyManager:
     def _on_key_release(self, event):
         """按住模式 - 按键释放处理"""
         if not self._active or not self._recording:
+            return
+
+        # 扫描码过滤：排除左 Alt 等混淆按键
+        if not self._is_target_key(event):
             return
 
         # 启动保护期内忽略事件
