@@ -44,14 +44,4 @@ jobs:
           ruff format --check .
 
       - name: Import verification
-        run: |
-          python -c "from config import Config; print('config OK')"
-          python -c "from engine.hotword_manager import HotwordManager; print('hotword OK')"
-          python -c "from engine.punctuation_processor import PunctuationProcessor; print('punctuation OK')"
-          python -c "from engine.emoji_injector import EmojiInjector; print('emoji OK')"
-          python -c "from engine.whisper_engine import WhisperEngine; print('engine OK')"
-          python -c "try:\n    from audio.recorder import AudioRecorder; print('audio OK')\nexcept Exception as e:\n    print(f'audio SKIP: {e}')"
-          python -c "try:\n    from input.text_injector import TextInjector; print('input OK')\nexcept Exception as e:\n    print(f'input SKIP: {e}')"
-          python -c "try:\n    from hotkey.hotkey_manager import HotkeyManager; print('hotkey OK')\nexcept Exception as e:\n    print(f'hotkey SKIP: {e}')"
-          python -c "try:\n    from ui.tray_app import TrayApp; print('tray OK')\nexcept Exception as e:\n    print(f'tray SKIP: {e}')"
-          python -c "try:\n    from ui.settings_window import SettingsWindow; print('settings OK')\nexcept Exception as e:\n    print(f'settings SKIP: {e}')"
+        run: python .github/scripts/verify_imports.py
