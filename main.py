@@ -1,12 +1,10 @@
 """语音输入法主程序 - 集成所有模块的应用入口"""
 
 import os
-import sys
 import signal
 import logging
 import threading
 import queue
-import time
 from typing import Optional
 
 # 配置 HuggingFace 国内镜像（必须在 import faster-whisper/huggingface_hub 之前设置）
@@ -199,7 +197,9 @@ class VoiceInputApp:
                         text = self.emoji_injector.process(text)
                         self._result_queue.put(("transcription_complete", text))
                     else:
-                        self._result_queue.put(("transcription_failed", "未能识别出文字"))
+                        self._result_queue.put(
+                            ("transcription_failed", "未能识别出文字")
+                        )
 
                 except Exception as e:
                     self._result_queue.put(("transcription_failed", str(e)))
@@ -293,8 +293,6 @@ class VoiceInputApp:
 
     def _show_settings(self):
         """显示设置窗口"""
-        import customtkinter as ctk
-
         # 如果窗口已存在且还在显示，直接置顶
         if self._settings_window is not None:
             try:

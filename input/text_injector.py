@@ -2,7 +2,6 @@
 
 import time
 import threading
-from typing import Optional
 
 import pyperclip
 import keyboard
@@ -82,6 +81,7 @@ class TextInjector:
             text: 要输入的文本
             delay: 延迟秒数
         """
+
         def _delayed_inject():
             time.sleep(delay)
             self.inject_text(text)

@@ -1,4 +1,5 @@
 """手动下载 Whisper 模型（通过代理）"""
+
 import os
 import sys
 import urllib.request
@@ -44,7 +45,7 @@ def download_file(filename, expected_size, opener, repo, revision, snap_dir):
     try:
         req = urllib.request.Request(url)
         response = opener.open(req, timeout=600)
-        
+
         # Stream download with progress
         os.makedirs(snap_dir, exist_ok=True)
         total = 0
@@ -58,14 +59,18 @@ def download_file(filename, expected_size, opener, repo, revision, snap_dir):
                 total += len(chunk)
                 if expected_size:
                     pct = total / expected_size * 100
-                    print(f"\r  {total / 1024 / 1024:.1f} / {expected_size / 1024 / 1024:.1f} MB ({pct:.0f}%)", end="", flush=True)
-        
+                    print(
+                        f"\r  {total / 1024 / 1024:.1f} / {expected_size / 1024 / 1024:.1f} MB ({pct:.0f}%)",
+                        end="",
+                        flush=True,
+                    )
+
         print(f"\n  Done: {total} bytes")
-        
+
         if expected_size and total != expected_size:
             print(f"  WARNING: Size mismatch! Expected {expected_size}, got {total}")
             return False
-        
+
         return True
     except Exception as e:
         print(f"\n  FAILED: {e}")
@@ -86,7 +91,9 @@ def main():
     files = model_cfg["files"]
 
     blob_dir = os.path.join(CACHE_DIR, f"models--{repo.replace('/', '--')}", "blobs")
-    snap_dir = os.path.join(CACHE_DIR, f"models--{repo.replace('/', '--')}", "snapshots", revision)
+    snap_dir = os.path.join(
+        CACHE_DIR, f"models--{repo.replace('/', '--')}", "snapshots", revision
+    )
 
     proxy = urllib.request.ProxyHandler({"https": PROXY, "http": PROXY})
     opener = urllib.request.build_opener(proxy)
@@ -99,6 +106,7 @@ def main():
 
     # 清理不完整文件
     import glob
+
     for f in glob.glob(os.path.join(blob_dir, "*.incomplete")):
         os.remove(f)
         print(f"已清理: {os.path.basename(f)}")

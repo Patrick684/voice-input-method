@@ -2,13 +2,18 @@
 用途：检查 Whisper 模型是否已下载完整
 示例：python check_model_from_files.py [模型名称] [缓存目录]
 """
+
 import os
 import sys
 
 # 支持命令行参数，否则使用默认路径
 model_name = sys.argv[1] if len(sys.argv) > 1 else "small"
-cache_base = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceInput", "Models"
+cache_base = (
+    sys.argv[2]
+    if len(sys.argv) > 2
+    else os.path.join(
+        os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceInput", "Models"
+    )
 )
 model_path = os.path.join(cache_base, f"models--Systran--faster-whisper-{model_name}")
 

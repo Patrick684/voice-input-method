@@ -68,7 +68,7 @@ class AudioRecorder:
 
             # 计算音量 (RMS)
             if self.on_volume:
-                rms = np.sqrt(np.mean(audio_data ** 2))
+                rms = np.sqrt(np.mean(audio_data**2))
                 # 归一化到 0-1 范围
                 volume = min(1.0, rms * 10)
                 self.on_volume(volume)
@@ -104,7 +104,9 @@ class AudioRecorder:
                 try:
                     input_device = sd.default.device[0]
                     device_info = sd.query_devices(input_device)
-                    logger.info(f"使用默认输入设备: [{input_device}] {device_info['name']}")
+                    logger.info(
+                        f"使用默认输入设备: [{input_device}] {device_info['name']}"
+                    )
                 except Exception:
                     logger.info("使用 sounddevice 默认设备")
 
@@ -114,7 +116,9 @@ class AudioRecorder:
                     device=input_device,
                     channels=1,
                     dtype="float32",
-                    blocksize=int(self.sample_rate * 0.2),  # 200ms 块，提高 Windows 稳定性
+                    blocksize=int(
+                        self.sample_rate * 0.2
+                    ),  # 200ms 块，提高 Windows 稳定性
                     callback=self._audio_callback,
                 )
                 self._stream.start()
@@ -159,7 +163,7 @@ class AudioRecorder:
         audio_data = np.concatenate(audio_chunks)
 
         # 记录音频质量指标（用于调试识别准确率问题）
-        rms = np.sqrt(np.mean(audio_data ** 2))
+        rms = np.sqrt(np.mean(audio_data**2))
         peak = np.max(np.abs(audio_data))
         duration = len(audio_data) / self.sample_rate
         logger.info(
@@ -195,12 +199,14 @@ class AudioRecorder:
         input_devices = []
         for i, dev in enumerate(devices):
             if dev["max_input_channels"] > 0:
-                input_devices.append({
-                    "index": i,
-                    "name": dev["name"],
-                    "channels": dev["max_input_channels"],
-                    "sample_rate": int(dev["default_samplerate"]),
-                })
+                input_devices.append(
+                    {
+                        "index": i,
+                        "name": dev["name"],
+                        "channels": dev["max_input_channels"],
+                        "sample_rate": int(dev["default_samplerate"]),
+                    }
+                )
         return input_devices
 
     def get_audio_duration(self, audio_data: np.ndarray) -> float:

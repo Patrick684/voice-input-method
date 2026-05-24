@@ -10,6 +10,7 @@ import pystray
 
 class AppState(Enum):
     """应用状态枚举"""
+
     IDLE = "idle"
     RECORDING = "recording"
     PROCESSING = "processing"
@@ -21,10 +22,10 @@ class TrayApp:
 
     # 图标颜色配置 (R, G, B)
     COLORS = {
-        AppState.IDLE: (100, 200, 100),       # 绿色 - 空闲
-        AppState.RECORDING: (220, 50, 50),     # 红色 - 录音中
-        AppState.PROCESSING: (50, 150, 220),   # 蓝色 - 识别中
-        AppState.DISABLED: (150, 150, 150),    # 灰色 - 已禁用
+        AppState.IDLE: (100, 200, 100),  # 绿色 - 空闲
+        AppState.RECORDING: (220, 50, 50),  # 红色 - 录音中
+        AppState.PROCESSING: (50, 150, 220),  # 蓝色 - 识别中
+        AppState.DISABLED: (150, 150, 150),  # 灰色 - 已禁用
     }
 
     TOOLTIPS = {

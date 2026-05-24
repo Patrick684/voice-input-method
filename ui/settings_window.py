@@ -51,17 +51,25 @@ class SettingsWindow(ctk.CTkToplevel):
         btn_frame.pack(fill="x", padx=15, pady=(5, 15))
 
         ctk.CTkButton(
-            btn_frame, text="恢复默认", width=80,
-            fg_color="gray", command=self._reset_settings,
+            btn_frame,
+            text="恢复默认",
+            width=80,
+            fg_color="gray",
+            command=self._reset_settings,
         ).pack(side="left")
 
         ctk.CTkButton(
-            btn_frame, text="取消", width=80,
-            fg_color="gray", command=self.destroy,
+            btn_frame,
+            text="取消",
+            width=80,
+            fg_color="gray",
+            command=self.destroy,
         ).pack(side="right")
 
         ctk.CTkButton(
-            btn_frame, text="保存", width=80,
+            btn_frame,
+            text="保存",
+            width=80,
             command=self._save_settings,
         ).pack(side="right", padx=(0, 10))
 
@@ -73,7 +81,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="录音快捷键:").pack(anchor="w", pady=(10, 0))
         self.hotkey_var = ctk.StringVar()
         self.hotkey_menu = ctk.CTkOptionMenu(
-            tab, variable=self.hotkey_var,
+            tab,
+            variable=self.hotkey_var,
             values=["右 Alt", "右 Ctrl", "右 Shift", "F4", "F8", "F9", "F10"],
         )
         self.hotkey_menu.pack(fill="x", pady=(0, 10))
@@ -82,7 +91,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="触发方式:").pack(anchor="w")
         self.mode_var = ctk.StringVar()
         self.mode_menu = ctk.CTkOptionMenu(
-            tab, variable=self.mode_var,
+            tab,
+            variable=self.mode_var,
             values=["按住说话", "切换模式"],
         )
         self.mode_menu.pack(fill="x", pady=(0, 10))
@@ -91,7 +101,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="识别语言:").pack(anchor="w")
         self.lang_var = ctk.StringVar()
         self.lang_menu = ctk.CTkOptionMenu(
-            tab, variable=self.lang_var,
+            tab,
+            variable=self.lang_var,
             values=["中文", "English", "日本語", "自动检测"],
         )
         self.lang_menu.pack(fill="x", pady=(0, 10))
@@ -99,17 +110,23 @@ class SettingsWindow(ctk.CTkToplevel):
         # 开关选项
         self.auto_start_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="开机自动启动", variable=self.auto_start_var,
+            tab,
+            text="开机自动启动",
+            variable=self.auto_start_var,
         ).pack(anchor="w", pady=(5, 5))
 
         self.minimized_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="启动时最小化到托盘", variable=self.minimized_var,
+            tab,
+            text="启动时最小化到托盘",
+            variable=self.minimized_var,
         ).pack(anchor="w", pady=(0, 5))
 
         self.notify_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="显示系统通知", variable=self.notify_var,
+            tab,
+            text="显示系统通知",
+            variable=self.notify_var,
         ).pack(anchor="w", pady=(0, 10))
 
     def _create_engine_tab(self):
@@ -120,7 +137,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="识别模型:").pack(anchor="w", pady=(10, 0))
         self.model_var = ctk.StringVar()
         self.model_menu = ctk.CTkOptionMenu(
-            tab, variable=self.model_var,
+            tab,
+            variable=self.model_var,
             values=[
                 "Tiny (75MB, 最快)",
                 "Base (150MB, 推荐)",
@@ -134,7 +152,8 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="计算精度:").pack(anchor="w")
         self.compute_var = ctk.StringVar()
         self.compute_menu = ctk.CTkOptionMenu(
-            tab, variable=self.compute_var,
+            tab,
+            variable=self.compute_var,
             values=["Int8 (推荐)", "Float16", "Float32 (最准确)"],
         )
         self.compute_menu.pack(fill="x", pady=(0, 10))
@@ -143,7 +162,10 @@ class SettingsWindow(ctk.CTkToplevel):
         ctk.CTkLabel(tab, text="束搜索大小:").pack(anchor="w")
         self.beam_var = ctk.IntVar(value=5)
         self.beam_slider = ctk.CTkSlider(
-            tab, from_=1, to=10, number_of_steps=9,
+            tab,
+            from_=1,
+            to=10,
+            number_of_steps=9,
             variable=self.beam_var,
             command=lambda v: self.beam_label.configure(text=f"束搜索大小: {int(v)}"),
         )
@@ -161,7 +183,9 @@ class SettingsWindow(ctk.CTkToplevel):
         except Exception:
             pass
         self.device_menu = ctk.CTkOptionMenu(
-            tab, variable=self.device_var, values=device_values,
+            tab,
+            variable=self.device_var,
+            values=device_values,
         )
         self.device_menu.pack(fill="x", pady=(0, 10))
 
@@ -176,13 +200,18 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self.vad_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="启用 VAD 过滤", variable=self.vad_var,
+            tab,
+            text="启用 VAD 过滤",
+            variable=self.vad_var,
         ).pack(anchor="w", pady=(0, 5))
 
         ctk.CTkLabel(tab, text="VAD 灵敏度:").pack(anchor="w")
         self.vad_threshold_var = ctk.IntVar(value=50)
         self.vad_slider = ctk.CTkSlider(
-            tab, from_=0, to=100, variable=self.vad_threshold_var,
+            tab,
+            from_=0,
+            to=100,
+            variable=self.vad_threshold_var,
             command=lambda v: self.vad_label.configure(text=f"{int(v)}%"),
         )
         self.vad_slider.pack(fill="x")
@@ -196,7 +225,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self.restore_clip_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="粘贴后恢复剪贴板内容", variable=self.restore_clip_var,
+            tab,
+            text="粘贴后恢复剪贴板内容",
+            variable=self.restore_clip_var,
         ).pack(anchor="w", pady=(0, 15))
 
         # Emoji
@@ -206,13 +237,16 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self.emoji_var = ctk.BooleanVar()
         ctk.CTkSwitch(
-            tab, text="启用语义 Emoji", variable=self.emoji_var,
+            tab,
+            text="启用语义 Emoji",
+            variable=self.emoji_var,
         ).pack(anchor="w", pady=(0, 5))
 
         ctk.CTkLabel(tab, text="Emoji 密度:").pack(anchor="w")
         self.emoji_density_var = ctk.StringVar()
         ctk.CTkOptionMenu(
-            tab, variable=self.emoji_density_var,
+            tab,
+            variable=self.emoji_density_var,
             values=["低", "中", "高"],
         ).pack(fill="x", pady=(0, 10))
 
@@ -220,16 +254,26 @@ class SettingsWindow(ctk.CTkToplevel):
         """从配置加载设置"""
         # 快捷键映射
         hotkey_map = {
-            "right alt": "右 Alt", "right ctrl": "右 Ctrl",
-            "right shift": "右 Shift", "f4": "F4", "f8": "F8",
-            "f9": "F9", "f10": "F10",
+            "right alt": "右 Alt",
+            "right ctrl": "右 Ctrl",
+            "right shift": "右 Shift",
+            "f4": "F4",
+            "f8": "F8",
+            "f9": "F9",
+            "f10": "F10",
         }
         self.hotkey_var.set(hotkey_map.get(self.config.get("hotkey"), "右 Alt"))
 
         mode_map = {"hold": "按住说话", "toggle": "切换模式"}
         self.mode_var.set(mode_map.get(self.config.get("hotkey_mode"), "按住说话"))
 
-        lang_map = {"zh": "中文", "en": "English", "ja": "日本語", None: "自动检测", "": "自动检测"}
+        lang_map = {
+            "zh": "中文",
+            "en": "English",
+            "ja": "日本語",
+            None: "自动检测",
+            "": "自动检测",
+        }
         self.lang_var.set(lang_map.get(self.config.get("language"), "中文"))
 
         self.auto_start_var.set(self.config.get("auto_start", False))
@@ -238,13 +282,23 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # 模型
         model_map = {
-            "tiny": "Tiny (75MB, 最快)", "base": "Base (150MB, 推荐)",
-            "small": "Small (500MB, 高精度)", "medium": "Medium (1.5GB, 专业)",
+            "tiny": "Tiny (75MB, 最快)",
+            "base": "Base (150MB, 推荐)",
+            "small": "Small (500MB, 高精度)",
+            "medium": "Medium (1.5GB, 专业)",
         }
-        self.model_var.set(model_map.get(self.config.get("model_size"), "Base (150MB, 推荐)"))
+        self.model_var.set(
+            model_map.get(self.config.get("model_size"), "Base (150MB, 推荐)")
+        )
 
-        compute_map = {"int8": "Int8 (推荐)", "float16": "Float16", "float32": "Float32 (最准确)"}
-        self.compute_var.set(compute_map.get(self.config.get("compute_type"), "Int8 (推荐)"))
+        compute_map = {
+            "int8": "Int8 (推荐)",
+            "float16": "Float16",
+            "float32": "Float32 (最准确)",
+        }
+        self.compute_var.set(
+            compute_map.get(self.config.get("compute_type"), "Int8 (推荐)")
+        )
 
         beam = self.config.get("beam_size", 5)
         self.beam_var.set(beam)
@@ -262,7 +316,9 @@ class SettingsWindow(ctk.CTkToplevel):
         self.emoji_var.set(self.config.get("emoji_enabled", True))
 
         density_map = {"low": "低", "medium": "中", "high": "高"}
-        self.emoji_density_var.set(density_map.get(self.config.get("emoji_density"), "中"))
+        self.emoji_density_var.set(
+            density_map.get(self.config.get("emoji_density"), "中")
+        )
 
     def _save_settings(self):
         """保存设置"""
@@ -270,9 +326,13 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # 快捷键
         hotkey_reverse = {
-            "右 Alt": "right alt", "右 Ctrl": "right ctrl",
-            "右 Shift": "right shift", "F4": "f4", "F8": "f8",
-            "F9": "f9", "F10": "f10",
+            "右 Alt": "right alt",
+            "右 Ctrl": "right ctrl",
+            "右 Shift": "right shift",
+            "F4": "f4",
+            "F8": "f8",
+            "F9": "f9",
+            "F10": "f10",
         }
         hotkey = hotkey_reverse.get(self.hotkey_var.get(), "right alt")
         if hotkey != self.config.get("hotkey"):
@@ -297,14 +357,20 @@ class SettingsWindow(ctk.CTkToplevel):
 
         # 模型
         model_reverse = {
-            "Tiny (75MB, 最快)": "tiny", "Base (150MB, 推荐)": "base",
-            "Small (500MB, 高精度)": "small", "Medium (1.5GB, 专业)": "medium",
+            "Tiny (75MB, 最快)": "tiny",
+            "Base (150MB, 推荐)": "base",
+            "Small (500MB, 高精度)": "small",
+            "Medium (1.5GB, 专业)": "medium",
         }
         model = model_reverse.get(self.model_var.get(), "base")
         if model != self.config.get("model_size"):
             changes["model_size"] = model
 
-        compute_reverse = {"Int8 (推荐)": "int8", "Float16": "float16", "Float32 (最准确)": "float32"}
+        compute_reverse = {
+            "Int8 (推荐)": "int8",
+            "Float16": "float16",
+            "Float32 (最准确)": "float32",
+        }
         compute = compute_reverse.get(self.compute_var.get(), "int8")
         if compute != self.config.get("compute_type"):
             changes["compute_type"] = compute

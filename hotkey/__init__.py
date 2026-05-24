@@ -1,1 +1,1 @@
-from .hotkey_manager import HotkeyManager
+from .hotkey_manager import HotkeyManager as HotkeyManager

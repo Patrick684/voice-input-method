@@ -210,8 +210,7 @@ class HotwordManager:
             data = {
                 "global_hotwords": self._global_hotwords,
                 "categories": {
-                    name: cat.hotwords
-                    for name, cat in self._categories.items()
+                    name: cat.hotwords for name, cat in self._categories.items()
                 },
             }
             with open(filepath, "w", encoding="utf-8") as f:

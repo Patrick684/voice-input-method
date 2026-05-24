@@ -1,7 +1,7 @@
 """语义表情符号识别模块 - 根据语音内容自动添加 emoji"""
 
 import re
-from typing import Optional, List, Tuple
+from typing import Optional, List
 
 
 class EmojiRule:
@@ -37,122 +37,146 @@ class EmojiInjector:
         # 情感 - 开心
         EmojiRule(
             ["开心", "高兴", "快乐", "愉快", "幸福", "兴奋", "哈哈", "嘻嘻"],
-            "😊", priority=2,
+            "😊",
+            priority=2,
         ),
         # 情感 - 悲伤
         EmojiRule(
             ["难过", "伤心", "悲伤", "哭", "失望", "沮丧", "郁闷", "呜呜"],
-            "😢", priority=2,
+            "😢",
+            priority=2,
         ),
         # 情感 - 生气
         EmojiRule(
             ["生气", "愤怒", "气死", "火大", "讨厌", "烦人"],
-            "😡", priority=2,
+            "😡",
+            priority=2,
         ),
         # 情感 - 惊讶
         EmojiRule(
             ["惊讶", "震惊", "天哪", "我的天", "不会吧", "真的吗", "啊"],
-            "😮", priority=1,
+            "😮",
+            priority=1,
         ),
         # 情感 - 喜爱
         EmojiRule(
             ["喜欢", "爱", "心动", "迷恋", "好爱", "太爱"],
-            "❤️", priority=2,
+            "❤️",
+            priority=2,
         ),
         # 鼓励
         EmojiRule(
             ["加油", "努力", "坚持", "奋斗", "拼搏", "冲冲冲"],
-            "💪", priority=2,
+            "💪",
+            priority=2,
         ),
         # 赞同
         EmojiRule(
             ["好的", "可以", "没问题", "行", "赞同", "同意", "没错"],
-            "👍", priority=1,
+            "👍",
+            priority=1,
         ),
         # 感谢
         EmojiRule(
             ["谢谢", "感谢", "多谢", "感恩", "太感谢"],
-            "🙏", priority=2,
+            "🙏",
+            priority=2,
         ),
         # 道歉
         EmojiRule(
             ["抱歉", "对不起", "不好意思", "sorry"],
-            "🙇", priority=2,
+            "🙇",
+            priority=2,
         ),
         # 赞美
         EmojiRule(
             ["厉害", "棒", "优秀", "厉害了我的", "太强了", "牛", "大佬"],
-            "👏", priority=1,
+            "👏",
+            priority=1,
         ),
         # 思考
         EmojiRule(
             ["想想", "考虑", "思考", "嗯", "让我想", "琢磨"],
-            "🤔", priority=1,
+            "🤔",
+            priority=1,
         ),
         # 庆祝
         EmojiRule(
             ["恭喜", "祝贺", "庆祝", "万岁", "太棒了", "耶"],
-            "🎉", priority=2,
+            "🎉",
+            priority=2,
         ),
         # 食物
         EmojiRule(
             ["吃饭", "美食", "好吃", "饭", "火锅", "烧烤", "奶茶", "咖啡"],
-            "🍽️", priority=1,
+            "🍽️",
+            priority=1,
         ),
         # 工作
         EmojiRule(
             ["工作", "上班", "加班", "开会", "项目", "需求", "deadline"],
-            "💼", priority=1,
+            "💼",
+            priority=1,
         ),
         # 学习
         EmojiRule(
             ["学习", "考试", "作业", "论文", "研究", "读书"],
-            "📚", priority=1,
+            "📚",
+            priority=1,
         ),
         # 天气 - 晴天
         EmojiRule(
             ["天气好", "晴天", "太阳", "阳光", "暖和"],
-            "☀️", priority=1,
+            "☀️",
+            priority=1,
         ),
         # 天气 - 雨天
         EmojiRule(
             ["下雨", "雨天", "暴雨", "淋雨", "打伞"],
-            "🌧️", priority=1,
+            "🌧️",
+            priority=1,
         ),
         # 睡眠
         EmojiRule(
             ["睡觉", "晚安", "困了", "累了想睡", "好困"],
-            "😴", priority=1,
+            "😴",
+            priority=1,
         ),
         # 旅行
         EmojiRule(
             ["旅游", "旅行", "出去玩", "度假", "风景", "景点"],
-            "✈️", priority=1,
+            "✈️",
+            priority=1,
         ),
         # 金钱
         EmojiRule(
             ["赚钱", "工资", "发财", "红包", "奖金", "涨薪"],
-            "💰", priority=1,
+            "💰",
+            priority=1,
         ),
         # 音乐
         EmojiRule(
             ["音乐", "唱歌", "听歌", "好听", "歌曲", "旋律"],
-            "🎵", priority=1,
+            "🎵",
+            priority=1,
         ),
         # 运动
         EmojiRule(
             ["跑步", "健身", "运动", "打球", "游泳", "篮球", "足球"],
-            "🏃", priority=1,
+            "🏃",
+            priority=1,
         ),
         # 时间 - 早上
         EmojiRule(
             ["早上好", "早安", "起床", "清晨", "早晨"],
-            "🌅", priority=1,
+            "🌅",
+            priority=1,
         ),
         # 时间 - 晚上
         EmojiRule(
             ["晚上好", "晚安", "夜晚", "月亮"],
-            "🌙", priority=1,
+            "🌙",
+            priority=1,
         ),
     ]
 

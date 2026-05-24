@@ -1,1 +1,1 @@
-from .recorder import AudioRecorder
+from .recorder import AudioRecorder as AudioRecorder

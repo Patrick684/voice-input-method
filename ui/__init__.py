@@ -1,2 +1,2 @@
-from .tray_app import TrayApp
-from .settings_window import SettingsWindow
+from .tray_app import TrayApp as TrayApp
+from .settings_window import SettingsWindow as SettingsWindow

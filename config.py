@@ -13,38 +13,30 @@ class Config:
         # 快捷键设置
         "hotkey": "right alt",
         "hotkey_mode": "hold",  # hold: 按住录音, toggle: 切换录音
-
         # 语音识别设置
         "model_size": "small",  # tiny, base, small, medium, large
         "language": "zh",  # zh: 中文, en: 英文, None: 自动检测
         "beam_size": 5,
         "compute_type": "int8",  # int8, float16, float32
-
         # 音频设置
         "sample_rate": 16000,
         "audio_device": None,  # None 表示使用默认设备
-
         # 文本输入设置
         "input_method": "clipboard",  # clipboard: 剪贴板粘贴
         "restore_clipboard": True,  # 恢复原始剪贴板内容
-
         # UI 设置
         "start_minimized": True,
         "auto_start": False,
         "show_notifications": True,
-
         # 热词设置
         "hotwords": [],
         "hotword_weight": 1.5,
-
         # 标点优化
         "punctuation_optimization": True,
         "auto_paragraph": False,
-
         # Emoji 设置
         "emoji_enabled": True,
         "emoji_density": "medium",  # low, medium, high
-
         # 高级设置
         "vad_filter": True,
         "vad_threshold": 0.5,
@@ -53,8 +45,7 @@ class Config:
     def __init__(self, config_dir: Optional[str] = None):
         if config_dir is None:
             config_dir = os.path.join(
-                os.environ.get("APPDATA", os.path.expanduser("~")),
-                "VoiceInput"
+                os.environ.get("APPDATA", os.path.expanduser("~")), "VoiceInput"
             )
         self.config_dir = Path(config_dir)
         self.config_dir.mkdir(parents=True, exist_ok=True)

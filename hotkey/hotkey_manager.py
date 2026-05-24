@@ -4,7 +4,7 @@ import logging
 import time
 import threading
 import winsound
-from typing import Callable, Optional, Set
+from typing import Callable, Optional
 
 import keyboard
 
@@ -23,17 +23,17 @@ class HotkeyManager:
     # 需要扫描码过滤的按键及其有效扫描码集合
     # Windows 下 keyboard 库无法可靠区分左右修饰键，通过扫描码解决
     SCAN_CODE_FILTERS = {
-        "right alt": {312},       # 右Alt: scan code 56 + extended flag = 312
-        "left alt": {56},         # 左Alt: scan code 56
-        "right ctrl": {285},      # 右Ctrl: scan code 29 + extended flag = 285
-        "left ctrl": {29},        # 左Ctrl: scan code 29
-        "right shift": {54},      # 右Shift: scan code 54
-        "left shift": {42},       # 左Shift: scan code 42
+        "right alt": {312},  # 右Alt: scan code 56 + extended flag = 312
+        "left alt": {56},  # 左Alt: scan code 56
+        "right ctrl": {285},  # 右Ctrl: scan code 29 + extended flag = 285
+        "left ctrl": {29},  # 左Ctrl: scan code 29
+        "right shift": {54},  # 右Shift: scan code 54
+        "left shift": {42},  # 左Shift: scan code 42
     }
 
     # 左右键扫描码相同时，回退到 event.name 判断
     AMBIGUOUS_SCAN_CODES = {
-        56: {"right alt", "left alt"},    # Alt 键共用扫描码 56
+        56: {"right alt", "left alt"},  # Alt 键共用扫描码 56
         29: {"right ctrl", "left ctrl"},  # Ctrl 键共用扫描码 29
     }
 
@@ -136,13 +136,17 @@ class HotkeyManager:
         if not is_match:
             ambiguous_keys = self.AMBIGUOUS_SCAN_CODES.get(scan_code)
             if ambiguous_keys and hotkey_lower in ambiguous_keys:
-                is_match = (event_name == hotkey_lower)
+                is_match = event_name == hotkey_lower
                 if not is_match:
-                    logger.debug(f"扫描码模糊过滤: scan_code={scan_code}, name={event_name}, 期望={hotkey_lower}")
+                    logger.debug(
+                        f"扫描码模糊过滤: scan_code={scan_code}, name={event_name}, 期望={hotkey_lower}"
+                    )
                 return is_match
 
         if not is_match:
-            logger.debug(f"扫描码过滤: scan_code={scan_code}, 期望={valid_codes}, key={event_name}")
+            logger.debug(
+                f"扫描码过滤: scan_code={scan_code}, 期望={valid_codes}, key={event_name}"
+            )
         return is_match
 
     def _on_key_press(self, event):
