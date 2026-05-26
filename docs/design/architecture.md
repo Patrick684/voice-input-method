@@ -132,10 +132,10 @@ main.py
 
 ## 兼容性测试
 
-项目提供本地兼容性验证脚本（位于 `.qoder/scripts/testing/verify_compatibility.py`），新设备首次运行前建议执行：
+项目提供兼容性验证脚本（位于 `scripts/verify_compatibility.py`），新设备首次运行前建议执行：
 
 ```bash
-python .qoder/scripts/testing/verify_compatibility.py
+python scripts/verify_compatibility.py
 ```
 
 检测项目：
