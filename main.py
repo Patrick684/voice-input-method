@@ -17,10 +17,18 @@ from engine.whisper_engine import WhisperEngine
 from engine.hotword_manager import HotwordManager
 from engine.punctuation_processor import PunctuationProcessor
 from engine.emoji_injector import EmojiInjector
+from engine.post_processor import PostProcessor
 from input.text_injector import TextInjector
 from hotkey.hotkey_manager import HotkeyManager
 from ui.tray_app import TrayApp, AppState
 from ui.settings_window import SettingsWindow
+from utils.history import RecognitionHistory
+
+# 应用主题配置
+import customtkinter as ctk
+
+ctk.set_appearance_mode("system")
+ctk.set_default_color_theme("blue")
 
 
 # 配置日志
@@ -85,6 +93,17 @@ class VoiceInputApp:
             density=self.config.get("emoji_density", "medium"),
         )
 
+        # 后处理规则引擎
+        self.post_processor = PostProcessor(
+            rules_file=str(self.config.rules_file),
+        )
+
+        # 识别历史记录
+        self.history = RecognitionHistory(
+            history_file=str(self.config.history_file),
+            max_records=self.config.get("history_max_records", 500),
+        )
+
         # 文本输入器
         self.injector = TextInjector(
             restore_clipboard=self.config.get("restore_clipboard", True),
@@ -101,6 +120,10 @@ class VoiceInputApp:
 
     def run(self):
         """启动应用"""
+        # 应用保存的主题配置
+        theme = self.config.get("theme", "system")
+        ctk.set_appearance_mode(theme)
+
         # 获取快捷键显示名称
         hotkey_display = self._get_hotkey_display()
 
@@ -175,9 +198,10 @@ class VoiceInputApp:
                 try:
                     audio_data = task_data
 
-                    # 构建热词 initial_prompt
+                    # 构建热词 initial_prompt（含预置词库 + 用户自定义）
                     initial_prompt = self.hotword_manager.build_initial_prompt(
-                        weight=self.config.get("hotword_weight", 1.5)
+                        weight=self.config.get("hotword_weight", 1.5),
+                        max_words=self.config.get("hotword_max_count", 30),
                     )
 
                     text = self.engine.transcribe(
@@ -190,11 +214,13 @@ class VoiceInputApp:
                     )
 
                     if text:
-                        # 后处理流水线: 标点优化 -> emoji 注入
+                        # 后处理流水线: 标点优化 -> emoji 注入 -> 规则替换
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
                         )
                         text = self.emoji_injector.process(text)
+                        if self.config.get("post_process_enabled", True):
+                            text = self.post_processor.process(text)
                         self._result_queue.put(("transcription_complete", text))
                     else:
                         self._result_queue.put(
@@ -210,6 +236,14 @@ class VoiceInputApp:
         """在主线程中处理 worker 返回的结果"""
         if result_type == "transcription_complete":
             logger.info(f"识别结果: {data}")
+
+            # 保存识别历史
+            if self.config.get("history_enabled", True):
+                self.history.add_record(
+                    text=data,
+                    model=self.config.get("model_size", "small"),
+                )
+
             success = self.injector.inject_text(data)
             if success:
                 logger.info("文本输入成功")
@@ -304,6 +338,9 @@ class VoiceInputApp:
         self._settings_window = SettingsWindow(
             self.config,
             on_settings_changed=self._on_settings_changed,
+            hotword_manager=self.hotword_manager,
+            post_processor=self.post_processor,
+            history=self.history,
         )
         self._settings_window.protocol("WM_DELETE_WINDOW", self._on_settings_closed)
 
@@ -363,6 +400,14 @@ class VoiceInputApp:
             self.emoji_injector.enabled = changes["emoji_enabled"]
         if "emoji_density" in changes:
             self.emoji_injector.set_density(changes["emoji_density"])
+
+        # 更新后处理规则设置
+        if "post_process_builtin" in changes:
+            self.post_processor.set_builtin_enabled(changes["post_process_builtin"])
+
+        # 更新主题
+        if "theme" in changes:
+            ctk.set_appearance_mode(changes["theme"])
 
     # ---- 服务控制 ----
 

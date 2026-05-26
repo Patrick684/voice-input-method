@@ -3,10 +3,10 @@
 ## 流水线概览
 
 ```
-按住快捷键 → 录音采集 → 语音识别 → 标点优化 → Emoji注入 → 文本输入
-   ↓            ↓           ↓          ↓          ↓          ↓
-HotkeyMgr   Recorder   Whisper    Punct.     Emoji     TextInjector
-            (sd)       Engine     Proc.      Inject.   (clipboard)
+按住快捷键 → 录音采集 → 语音识别 → 标点优化 → Emoji注入 → 规则替换 → 文本输入
+   ↓            ↓           ↓          ↓          ↓          ↓          ↓
+HotkeyMgr   Recorder   Whisper    Punct.     Emoji     PostProc.   TextInjector
+            (sd)       Engine     Proc.      Inject.   (替换修正) (clipboard)
 ```
 
 ## 各阶段详解
@@ -51,7 +51,15 @@ HotkeyMgr   Recorder   Whisper    Punct.     Emoji     TextInjector
 4. 在句末标点前插入
 5. 密度控制 (low/medium/high)
 
-### 5. 文本输入 (TextInjector)
+### 5. 规则替换 (PostProcessor)
+
+处理步骤:
+1. 依次应用所有启用的替换规则
+2. 支持精确匹配替换（如"拍touch"→"PyTorch"）
+3. 支持正则表达式替换
+4. 预置规则覆盖 Whisper 常见中文识别错误
+
+### 6. 文本输入 (TextInjector)
 
 处理步骤:
 1. 保存当前剪贴板内容
@@ -75,6 +83,8 @@ HotkeyMgr   Recorder   Whisper    Punct.     Emoji     TextInjector
     ↓
 emoji 注入文本 (str)
     ↓
+规则替换文本 (str)
+    ↓
 剪贴板操作 + 按键模拟
 ```
 
@@ -86,6 +96,7 @@ emoji 注入文本 (str)
 | 语音识别 | ~1.5 秒 | ~400 MB (base) |
 | 标点优化 | <1 ms | 可忽略 |
 | Emoji 注入 | <1 ms | 可忽略 |
+| 规则替换 | <1 ms | 可忽略 |
 | 文本输入 | ~200 ms | 可忽略 |
 | **总计** | **<2 秒** | **<500 MB** |
 

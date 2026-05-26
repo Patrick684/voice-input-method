@@ -7,10 +7,6 @@ import customtkinter as ctk
 from config import Config
 from audio.recorder import AudioRecorder
 
-# 设置外观主题
-ctk.set_appearance_mode("system")
-ctk.set_default_color_theme("blue")
-
 
 class SettingsWindow(ctk.CTkToplevel):
     """应用设置窗口"""
@@ -19,14 +15,20 @@ class SettingsWindow(ctk.CTkToplevel):
         self,
         config: Config,
         on_settings_changed: Optional[Callable[[dict], None]] = None,
+        hotword_manager=None,
+        post_processor=None,
+        history=None,
         master=None,
     ):
         super().__init__(master)
         self.config = config
         self._on_settings_changed = on_settings_changed
+        self._hotword_manager = hotword_manager
+        self._post_processor = post_processor
+        self._history = history
 
         self.title("语音输入法 - 设置")
-        self.geometry("500x520")
+        self.geometry("560x580")
         self.resizable(False, False)
 
         # 确保窗口在前台
@@ -44,7 +46,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
         self._create_general_tab()
         self._create_engine_tab()
+        self._create_hotwords_tab()
         self._create_advanced_tab()
+        self._create_history_tab()
 
         # 底部按钮栏
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -128,6 +132,16 @@ class SettingsWindow(ctk.CTkToplevel):
             text="显示系统通知",
             variable=self.notify_var,
         ).pack(anchor="w", pady=(0, 10))
+
+        # 主题设置
+        ctk.CTkLabel(tab, text="外观主题:").pack(anchor="w")
+        self.theme_var = ctk.StringVar()
+        ctk.CTkOptionMenu(
+            tab,
+            variable=self.theme_var,
+            values=["跟随系统", "亮色", "暗色"],
+            command=self._on_theme_changed,
+        ).pack(fill="x", pady=(0, 10))
 
     def _create_engine_tab(self):
         """语音识别设置选项卡"""
@@ -250,6 +264,188 @@ class SettingsWindow(ctk.CTkToplevel):
             values=["低", "中", "高"],
         ).pack(fill="x", pady=(0, 10))
 
+        # 后处理规则
+        ctk.CTkLabel(tab, text="后处理规则", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
+
+        self.post_process_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="启用文本替换修正",
+            variable=self.post_process_var,
+        ).pack(anchor="w", pady=(0, 5))
+
+        self.post_builtin_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="启用预置替换规则",
+            variable=self.post_builtin_var,
+        ).pack(anchor="w", pady=(0, 10))
+
+        # 历史记录
+        ctk.CTkLabel(tab, text="历史记录", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
+
+        self.history_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="保存识别历史",
+            variable=self.history_var,
+        ).pack(anchor="w", pady=(0, 10))
+
+    def _create_hotwords_tab(self):
+        """热词管理选项卡"""
+        tab = self.tabview.add("热词管理")
+
+        # 预置词库
+        ctk.CTkLabel(tab, text="预置词库", font=("", 14, "bold")).pack(
+            anchor="w", pady=(10, 5)
+        )
+
+        self._builtin_switches = {}
+        if self._hotword_manager:
+            for cat_name in self._hotword_manager.get_builtin_categories():
+                var = ctk.BooleanVar()
+                ctk.CTkSwitch(
+                    tab,
+                    text=f"启用「{cat_name}」({len(self._hotword_manager.get_builtin_hotwords(cat_name))}词)",
+                    variable=var,
+                ).pack(anchor="w", pady=(0, 3))
+                self._builtin_switches[cat_name] = var
+
+        # 用户热词
+        ctk.CTkLabel(tab, text="用户自定义热词", font=("", 14, "bold")).pack(
+            anchor="w", pady=(15, 5)
+        )
+
+        # 热词显示框
+        self._hotword_textbox = ctk.CTkTextbox(tab, height=180)
+        self._hotword_textbox.pack(fill="both", expand=True, pady=(0, 5))
+
+        ctk.CTkLabel(
+            tab,
+            text="每行一个热词，支持中英文混合。热词将注入 Whisper 提升识别率。",
+            text_color="gray",
+        ).pack(anchor="w")
+
+        # 加载当前热词
+        if self._hotword_manager:
+            existing = self._hotword_manager.get_global_hotwords()
+            self._hotword_textbox.insert("1.0", "\n".join(existing))
+
+    def _create_history_tab(self):
+        """识别历史选项卡"""
+        tab = self.tabview.add("识别历史")
+
+        # 统计信息栏
+        stats_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        stats_frame.pack(fill="x", pady=(10, 5))
+
+        self._history_stats_label = ctk.CTkLabel(
+            stats_frame, text="加载统计中...", text_color="gray"
+        )
+        self._history_stats_label.pack(anchor="w")
+
+        # 搜索框
+        search_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        search_frame.pack(fill="x", pady=(0, 5))
+
+        self._history_search_var = ctk.StringVar()
+        ctk.CTkEntry(
+            search_frame,
+            placeholder_text="搜索历史记录...",
+            textvariable=self._history_search_var,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        ctk.CTkButton(
+            search_frame,
+            text="搜索",
+            width=60,
+            command=self._search_history,
+        ).pack(side="left")
+
+        ctk.CTkButton(
+            search_frame,
+            text="刷新",
+            width=60,
+            fg_color="gray",
+            command=self._refresh_history,
+        ).pack(side="left", padx=(5, 0))
+
+        # 历史列表
+        self._history_textbox = ctk.CTkTextbox(tab, height=260)
+        self._history_textbox.pack(fill="both", expand=True, pady=(0, 5))
+
+        # 底部按钮
+        btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        btn_frame.pack(fill="x")
+
+        ctk.CTkButton(
+            btn_frame,
+            text="清空历史",
+            width=80,
+            fg_color="#d9534f",
+            command=self._clear_history,
+        ).pack(side="right")
+
+        # 初始加载
+        self._refresh_history()
+
+    def _on_theme_changed(self, choice: str):
+        """主题切换回调"""
+        theme_map = {"跟随系统": "system", "亮色": "light", "暗色": "dark"}
+        ctk.set_appearance_mode(theme_map.get(choice, "system"))
+
+    def _refresh_history(self):
+        """刷新历史记录显示"""
+        if not self._history:
+            self._history_stats_label.configure(text="历史记录未启用")
+            return
+
+        stats = self._history.get_statistics()
+        self._history_stats_label.configure(
+            text=f"共 {stats['total_records']} 条记录 | "
+            f"{stats['total_characters']} 字 | "
+            f"总时长 {stats['total_duration_seconds']}s"
+        )
+
+        records = self._history.get_records(limit=50)
+        self._history_textbox.delete("1.0", "end")
+        for rec in records:
+            self._history_textbox.insert("end", f"[{rec.display_time}] {rec.text}\n")
+
+    def _search_history(self):
+        """搜索历史记录"""
+        if not self._history:
+            return
+        keyword = self._history_search_var.get().strip()
+        if not keyword:
+            self._refresh_history()
+            return
+
+        results = self._history.search(keyword)
+        self._history_textbox.delete("1.0", "end")
+        self._history_stats_label.configure(
+            text=f"搜索「{keyword}」: {len(results)} 条结果"
+        )
+        for rec in results[:50]:
+            self._history_textbox.insert("end", f"[{rec.display_time}] {rec.text}\n")
+
+    def _clear_history(self):
+        """清空历史记录"""
+        if not self._history:
+            return
+        dialog = ctk.CTkInputDialog(
+            text="输入 'clear' 确认清空历史:",
+            title="确认",
+        )
+        result = dialog.get_input()
+        if result and result.strip().lower() == "clear":
+            self._history.clear_all()
+            self._refresh_history()
+
     def _load_settings(self):
         """从配置加载设置"""
         # 快捷键映射
@@ -319,6 +515,25 @@ class SettingsWindow(ctk.CTkToplevel):
         self.emoji_density_var.set(
             density_map.get(self.config.get("emoji_density"), "中")
         )
+
+        # 后处理规则
+        self.post_process_var.set(self.config.get("post_process_enabled", True))
+        self.post_builtin_var.set(self.config.get("post_process_builtin", True))
+
+        # 历史记录
+        self.history_var.set(self.config.get("history_enabled", True))
+
+        # 主题
+        theme_map = {"system": "跟随系统", "light": "亮色", "dark": "暗色"}
+        self.theme_var.set(
+            theme_map.get(self.config.get("theme", "system"), "跟随系统")
+        )
+
+        # 热词预置分类开关
+        if self._hotword_manager:
+            active_builtin = self._hotword_manager.get_active_builtin_categories()
+            for cat_name, var in self._builtin_switches.items():
+                var.set(cat_name in active_builtin)
 
     def _save_settings(self):
         """保存设置"""
@@ -397,6 +612,47 @@ class SettingsWindow(ctk.CTkToplevel):
         density = density_reverse.get(self.emoji_density_var.get(), "medium")
         if density != self.config.get("emoji_density"):
             changes["emoji_density"] = density
+
+        # 后处理规则
+        if self.post_process_var.get() != self.config.get("post_process_enabled"):
+            changes["post_process_enabled"] = self.post_process_var.get()
+        if self.post_builtin_var.get() != self.config.get("post_process_builtin"):
+            changes["post_process_builtin"] = self.post_builtin_var.get()
+
+        # 历史记录
+        if self.history_var.get() != self.config.get("history_enabled"):
+            changes["history_enabled"] = self.history_var.get()
+
+        # 主题
+        theme_reverse = {"跟随系统": "system", "亮色": "light", "暗色": "dark"}
+        theme = theme_reverse.get(self.theme_var.get(), "system")
+        if theme != self.config.get("theme", "system"):
+            changes["theme"] = theme
+
+        # 热词管理（保存用户全局热词和预置分类开关）
+        if self._hotword_manager:
+            # 保存用户自定义热词
+            new_hotwords_text = self._hotword_textbox.get("1.0", "end").strip()
+            new_hotwords = [
+                w.strip() for w in new_hotwords_text.split("\n") if w.strip()
+            ]
+            old_hotwords = self._hotword_manager.get_global_hotwords()
+            if new_hotwords != old_hotwords:
+                # 清除旧的，添加新的
+                for w in old_hotwords:
+                    self._hotword_manager.remove_global_hotword(w)
+                for w in new_hotwords:
+                    self._hotword_manager.add_global_hotword(w)
+
+            # 保存预置分类开关
+            for cat_name, var in self._builtin_switches.items():
+                is_active = (
+                    cat_name in self._hotword_manager.get_active_builtin_categories()
+                )
+                if var.get() and not is_active:
+                    self._hotword_manager.activate_builtin_category(cat_name)
+                elif not var.get() and is_active:
+                    self._hotword_manager.deactivate_builtin_category(cat_name)
 
         # 保存
         if changes:

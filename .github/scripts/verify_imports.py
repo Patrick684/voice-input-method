@@ -19,6 +19,8 @@ REQUIRED_MODULES = [
     ("engine.punctuation_processor", "PunctuationProcessor"),
     ("engine.emoji_injector", "EmojiInjector"),
     ("engine.whisper_engine", "WhisperEngine"),
+    ("engine.post_processor", "PostProcessor"),
+    ("utils.history", "RecognitionHistory"),
 ]
 
 # 可选模块（依赖系统库，CI 环境可能缺失）

@@ -28,18 +28,26 @@ class Config:
         "start_minimized": True,
         "auto_start": False,
         "show_notifications": True,
+        "theme": "system",  # system, light, dark
         # 热词设置
         "hotwords": [],
         "hotword_weight": 1.5,
+        "hotword_max_count": 30,  # initial_prompt 最大热词数（防止 prompt 过长）
         # 标点优化
         "punctuation_optimization": True,
         "auto_paragraph": False,
         # Emoji 设置
         "emoji_enabled": True,
         "emoji_density": "medium",  # low, medium, high
+        # 后处理规则设置
+        "post_process_enabled": True,
+        "post_process_builtin": True,
         # 高级设置
         "vad_filter": True,
         "vad_threshold": 0.5,
+        # 历史记录设置
+        "history_enabled": True,
+        "history_max_records": 500,
     }
 
     def __init__(self, config_dir: Optional[str] = None):
@@ -100,3 +108,13 @@ class Config:
     def hotword_file(self) -> Path:
         """热词文件路径"""
         return self.config_dir / "hotwords.json"
+
+    @property
+    def rules_file(self) -> Path:
+        """后处理规则文件路径"""
+        return self.config_dir / "post_rules.json"
+
+    @property
+    def history_file(self) -> Path:
+        """识别历史文件路径"""
+        return self.config_dir / "history.json"

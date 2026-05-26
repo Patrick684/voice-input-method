@@ -21,7 +21,106 @@ class HotwordCategory:
 
 
 class HotwordManager:
-    """热词管理器，管理用户自定义热词以提升 Whisper 识别准确率"""
+    """热词管理器，管理用户自定义热词和预置词库以提升 Whisper 识别准确率"""
+
+    # 预置热词词库（按领域分类，覆盖常见易错词汇）
+    BUILTIN_CATEGORIES: Dict[str, List[str]] = {
+        "科技编程": [
+            "Python",
+            "JavaScript",
+            "TypeScript",
+            "React",
+            "Vue",
+            "Angular",
+            "TensorFlow",
+            "PyTorch",
+            "Kubernetes",
+            "Docker",
+            "GitHub",
+            "GitLab",
+            "VSCode",
+            "IntelliJ",
+            "Linux",
+            "Windows",
+            "macOS",
+            "Android",
+            "iOS",
+            "API",
+            "HTTP",
+            "JSON",
+            "YAML",
+            "SQL",
+            "Redis",
+            "MongoDB",
+            "Transformer",
+            "BERT",
+            "GPT",
+            "LLM",
+            "CUDA",
+            "GPU",
+            "ChatGPT",
+            "Copilot",
+            "HuggingFace",
+            "LangChain",
+            "微服务",
+            "容器化",
+            "云原生",
+            "持续集成",
+            "敏捷开发",
+        ],
+        "网络用语": [
+            "内卷",
+            "躺平",
+            "摆烂",
+            "绝绝子",
+            "YYDS",
+            "破防",
+            "元宇宙",
+            "ChatGPT",
+            "AI",
+            "种草",
+            "拔草",
+            "出圈",
+            "社死",
+            "凡尔赛",
+            "奥利给",
+            "爷青回",
+            "上头",
+            "下头",
+            "互联网嘴替",
+            "电子榨菜",
+            "显眼包",
+            "多巴胺",
+        ],
+        "日常办公": [
+            "Excel",
+            "Word",
+            "PowerPoint",
+            "PPT",
+            "Outlook",
+            "Teams",
+            "钉钉",
+            "飞书",
+            "企业微信",
+            "腾讯会议",
+            "Zoom",
+            "OKR",
+            "KPI",
+            "ROI",
+            "PPT",
+            "周报",
+            "日报",
+            "复盘",
+            "对齐",
+            "拉通",
+            "闭环",
+            "赋能",
+            "抓手",
+        ],
+    }
+
+    # 预置分类默认激活状态
+    BUILTIN_DEFAULT_ACTIVE = ["科技编程"]
 
     def __init__(self, hotword_file: Optional[str] = None):
         """
@@ -34,6 +133,7 @@ class HotwordManager:
         self._categories: Dict[str, HotwordCategory] = {}
         self._active_categories: List[str] = []
         self._global_hotwords: List[str] = []
+        self._active_builtin: List[str] = list(self.BUILTIN_DEFAULT_ACTIVE)
 
         if self.hotword_file:
             self._load()
@@ -49,6 +149,9 @@ class HotwordManager:
 
             self._global_hotwords = data.get("global_hotwords", [])
             self._active_categories = data.get("active_categories", [])
+            self._active_builtin = data.get(
+                "active_builtin", list(self.BUILTIN_DEFAULT_ACTIVE)
+            )
 
             for cat_data in data.get("categories", []):
                 cat = HotwordCategory.from_dict(cat_data)
@@ -65,6 +168,7 @@ class HotwordManager:
         data = {
             "global_hotwords": self._global_hotwords,
             "active_categories": self._active_categories,
+            "active_builtin": self._active_builtin,
             "categories": [cat.to_dict() for cat in self._categories.values()],
         }
 
@@ -154,36 +258,87 @@ class HotwordManager:
             self._save()
 
     def get_active_categories(self) -> List[str]:
-        """获取已激活的分类"""
+        """获取已激活的用户分类"""
         return list(self._active_categories)
+
+    # ---- 预置词库管理 ----
+
+    def get_builtin_categories(self) -> List[str]:
+        """获取所有预置词库分类名称"""
+        return list(self.BUILTIN_CATEGORIES.keys())
+
+    def get_builtin_hotwords(self, category: str) -> List[str]:
+        """获取预置分类的热词列表"""
+        return list(self.BUILTIN_CATEGORIES.get(category, []))
+
+    def get_active_builtin_categories(self) -> List[str]:
+        """获取已激活的预置分类"""
+        return list(self._active_builtin)
+
+    def activate_builtin_category(self, name: str):
+        """激活预置词库分类"""
+        if name in self.BUILTIN_CATEGORIES and name not in self._active_builtin:
+            self._active_builtin.append(name)
+            self._save()
+
+    def deactivate_builtin_category(self, name: str):
+        """停用预置词库分类"""
+        if name in self._active_builtin:
+            self._active_builtin.remove(name)
+            self._save()
 
     # ---- Whisper initial_prompt 生成 ----
 
-    def build_initial_prompt(self, weight: float = 1.5) -> Optional[str]:
+    def _collect_all_hotwords(self) -> List[str]:
+        """
+        收集所有生效的热词（全局 + 用户分类 + 预置词库），去重保序
+
+        Returns:
+            去重后的热词列表
+        """
+        all_hotwords = list(self._global_hotwords)
+
+        # 添加已激活的用户分类热词
+        for cat_name in self._active_categories:
+            if cat_name in self._categories:
+                all_hotwords.extend(self._categories[cat_name].hotwords)
+
+        # 添加已激活的预置词库热词
+        for cat_name in self._active_builtin:
+            if cat_name in self.BUILTIN_CATEGORIES:
+                all_hotwords.extend(self.BUILTIN_CATEGORIES[cat_name])
+
+        # 去重保序
+        return list(dict.fromkeys(all_hotwords))
+
+    def build_initial_prompt(
+        self, weight: float = 1.5, max_words: int = 30
+    ) -> Optional[str]:
         """
         构建 Whisper 的 initial_prompt 字符串
 
         通过 initial_prompt 参数注入热词上下文，可以显著提升
         特定词汇（人名、术语、地名等）的识别准确率。
 
+        智能截断：initial_prompt 过长会降低整体识别质量，
+        默认限制最多 30 个不重复热词。
+
         Args:
             weight: 热词权重（通过重复次数体现）
+            max_words: 最大不重复热词数量（防止 prompt 过长）
 
         Returns:
             initial_prompt 字符串，如果没有热词则返回 None
         """
-        all_hotwords = list(self._global_hotwords)
-
-        # 添加已激活分类的热词
-        for cat_name in self._active_categories:
-            if cat_name in self._categories:
-                all_hotwords.extend(self._categories[cat_name].hotwords)
+        all_hotwords = self._collect_all_hotwords()
 
         if not all_hotwords:
             return None
 
-        # 去重
-        all_hotwords = list(dict.fromkeys(all_hotwords))
+        # 智能截断：限制热词数量，防止 prompt 过长降低识别质量
+        if len(all_hotwords) > max_words:
+            # 优先保留用户全局热词，然后是按顺序的分类热词
+            all_hotwords = all_hotwords[:max_words]
 
         # 构建 prompt：重复热词以增加权重
         # Whisper 对 initial_prompt 中的词汇有更高识别倾向

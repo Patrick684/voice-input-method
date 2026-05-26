@@ -16,6 +16,7 @@
 │  │ Settings │ │  │ WhisperEngine.transcribe()  │     │  │
 │  └──────────┘ │  │ PunctuationProcessor        │     │  │
 │               │  │ EmojiInjector               │     │  │
+│               │  │ PostProcessor               │     │  │
 │               │  └─────────────────────────────┘     │  │
 │               └──────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────┘
@@ -31,10 +32,12 @@
 | engine | `engine/hotword_manager.py` | 热词管理，initial_prompt 构建 |
 | engine | `engine/punctuation_processor.py` | 中文标点优化后处理 |
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
+| engine | `engine/post_processor.py` | 后处理规则替换引擎 |
 | input | `input/text_injector.py` | 剪贴板+粘贴文本输入 |
 | hotkey | `hotkey/hotkey_manager.py` | 全局快捷键监听 |
 | ui | `ui/tray_app.py` | 系统托盘图标和菜单 |
-| ui | `ui/settings_window.py` | 设置窗口 UI |
+| ui | `ui/settings_window.py` | 设置窗口 UI（含热词管理/历史面板） |
+| utils | `utils/history.py` | 识别历史记录管理 |
 
 ## 线程模型
 
@@ -48,9 +51,11 @@ pystray 事件循环           模型加载                   keyboard 监听
                           语音识别                   → on_start 回调
                           标点处理                   → on_stop 回调
                           emoji 注入                  → on_cancel 回调
+                          规则替换
                           结果返回 (queue.put)
                             ↓
 主线程接收结果
+保存历史记录
 文本注入
 状态更新
 ```
