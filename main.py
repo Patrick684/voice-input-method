@@ -19,6 +19,7 @@ from engine.hotword_manager import HotwordManager
 from engine.punctuation_processor import PunctuationProcessor
 from engine.emoji_injector import EmojiInjector
 from engine.post_processor import PostProcessor
+from engine.punctuation_restorer import PunctuationRestorer
 from engine.stream_vad import StreamVAD
 from input.text_injector import TextInjector
 from hotkey.hotkey_manager import HotkeyManager
@@ -103,9 +104,14 @@ class VoiceInputApp:
             hotword_file=str(self.config.hotword_file),
         )
 
-        # 标点优化器
+        # 标点优化器（语气修正，在 CT-Transformer 之后执行）
         self.punctuation_processor = PunctuationProcessor(
             auto_paragraph=self.config.get("auto_paragraph", False),
+        )
+
+        # 标点恢复引擎（CT-Transformer，将纯文本恢复为带标点文本）
+        self.punctuation_restorer = PunctuationRestorer(
+            cache_dir=str(self.config.model_cache_dir),
         )
 
         # Emoji 注入器
@@ -216,6 +222,18 @@ class VoiceInputApp:
                 except Exception as e:
                     self._result_queue.put(("model_load_failed", str(e)))
 
+            elif task_type == "load_punctuation_model":
+                try:
+                    self.punctuation_restorer.load_model(
+                        on_progress=lambda msg: logger.info(msg)
+                    )
+                    if self.punctuation_restorer.is_fallback:
+                        logger.warning("标点恢复使用规则后备方案")
+                    self._result_queue.put(("punctuation_model_loaded", None))
+                except Exception as e:
+                    logger.warning(f"标点恢复模型加载异常: {e}")
+                    self._result_queue.put(("punctuation_model_loaded", None))
+
             elif task_type == "transcribe":
                 try:
                     audio_data = task_data
@@ -236,7 +254,8 @@ class VoiceInputApp:
                     )
 
                     if text:
-                        # 后处理流水线: 标点优化 -> emoji 注入 -> 规则替换
+                        # 后处理流水线: 标点恢复(CT-Transformer) -> 语气修正 -> emoji -> 规则替换
+                        text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
                         )
@@ -272,6 +291,8 @@ class VoiceInputApp:
                     )
 
                     if text:
+                        # 流式后处理流水线（同批处理）
+                        text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
                         )
@@ -319,7 +340,10 @@ class VoiceInputApp:
             self.tray.set_state(AppState.IDLE)
 
         elif result_type == "model_loaded":
-            logger.info("模型加载完成")
+            logger.info("Whisper 模型加载完成")
+
+        elif result_type == "punctuation_model_loaded":
+            logger.info("标点恢复模型加载完成")
 
         elif result_type == "model_load_failed":
             logger.error(f"模型加载失败: {data}")
@@ -502,8 +526,9 @@ class VoiceInputApp:
     # ---- 模型加载 ----
 
     def _load_model_async(self):
-        """异步加载模型"""
+        """异步加载模型（Whisper + 标点恢复模型并行加载）"""
         self._task_queue.put(("load_model", None))
+        self._task_queue.put(("load_punctuation_model", None))
 
     # ---- 设置窗口 ----
 

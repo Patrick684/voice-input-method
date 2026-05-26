@@ -35,12 +35,12 @@ class CompatibilityChecker:
         "keyboard",
         "pyperclip",
         "pydub",
+        "torch",  # Silero VAD 神经网络语音检测
+        "funasr",  # CT-Transformer 标点恢复
     ]
 
     # 可选依赖（缺失时降级运行）
-    OPTIONAL_DEPENDENCIES = [
-        "torch",  # GPU 加速
-    ]
+    OPTIONAL_DEPENDENCIES: list[str] = []
 
     # 失败 -> 解决方案映射表
     SOLUTIONS = {

@@ -30,10 +30,11 @@
 | audio | `audio/recorder.py` | 麦克风音频采集，sounddevice 封装 |
 | engine | `engine/whisper_engine.py` | Whisper 语音识别引擎封装 |
 | engine | `engine/hotword_manager.py` | 热词管理，initial_prompt 构建 |
-| engine | `engine/punctuation_processor.py` | 中文标点优化后处理 |
+| engine | `engine/punctuation_processor.py` | 中文标点修正（语气/重复/空格） |
+| engine | `engine/punctuation_restorer.py` | CT-Transformer 语义标点恢复 |
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
 | engine | `engine/post_processor.py` | 后处理规则替换引擎 |
-| engine | `engine/stream_vad.py` | 流式 VAD 检测器，实时切句 |
+| engine | `engine/stream_vad.py` | 流式 VAD 检测器，基于 Silero VAD 神经网络实时切句 |
 | engine | `engine/transcriber.py` | 文件转写引擎，音视频转字幕 |
 | input | `input/text_injector.py` | 剪贴板+粘贴文本输入 |
 | hotkey | `hotkey/hotkey_manager.py` | 全局快捷键监听 |
@@ -96,7 +97,7 @@ pystray 事件循环           模型加载                   keyboard 监听
 ```json
 {
   "hotkey": "right alt",
-  "model_size": "base",
+  "model_size": "medium",
   "language": "zh",
   "beam_size": 5,
   "compute_type": "int8",
@@ -120,9 +121,10 @@ main.py
 │   ├── whisper_engine.py → faster-whisper
 │   ├── hotword_manager.py
 │   ├── punctuation_processor.py
+│   ├── punctuation_restorer.py → funasr (CT-Transformer)
 │   ├── emoji_injector.py
 │   ├── post_processor.py
-│   ├── stream_vad.py → numpy
+│   ├── stream_vad.py → torch (Silero VAD), numpy
 │   └── transcriber.py → pydub, faster-whisper
 ├── input/text_injector.py
 │   └── pyperclip, keyboard
@@ -149,8 +151,8 @@ python scripts/verify_compatibility.py
 |----------|----------|----------|
 | 操作系统 | Windows/Linux/macOS, 架构, 权限 | 必选 |
 | Python 版本 | 3.9~3.12, 64位 | 必选 |
-| 核心依赖 | numpy, faster-whisper, sounddevice 等 8 个包 | 必选 |
-| 可选依赖 | torch, pydub | 警告 |
+| 核心依赖 | numpy, faster-whisper, sounddevice 等 10 个包（含 torch, funasr） | 必选 |
+| 可选依赖 | pydub | 警告 |
 | 音频设备 | 麦克风设备检测 | 必选 |
 | GPU 加速 | NVIDIA CUDA / AMD ROCm / CPU 兜底 | 可选 |
 | 文件权限 | 配置目录/模型缓存可写 | 必选 |

@@ -7,3 +7,6 @@ Pillow>=10.0.0
 keyboard>=0.13.5
 pyperclip>=1.8.2
 pydub>=0.25.1
+torch>=2.0.0
+torchaudio>=2.0.0
+funasr>=1.0.0

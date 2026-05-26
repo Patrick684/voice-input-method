@@ -29,6 +29,16 @@ MODELS = {
             "model.bin": 500188928,
         },
     },
+    "medium": {
+        "repo": "Systran/faster-whisper-medium",
+        "revision": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+        "files": {
+            "config.json": 2257,
+            "tokenizer.json": 2203239,
+            "vocabulary.txt": 459861,
+            "model.bin": 1528865420,
+        },
+    },
 }
 
 

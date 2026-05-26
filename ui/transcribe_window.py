@@ -99,9 +99,9 @@ class TranscribeWindow(ctk.CTkToplevel):
             variable=self._model_var,
             values=[
                 "Tiny (75MB, 最快)",
-                "Base (150MB, 推荐)",
-                "Small (500MB, 高精度)",
-                "Medium (1.5GB, 专业)",
+                "Base (150MB)",
+                "Small (500MB, 推荐)",
+                "Medium (1.5GB, 高精度)",
             ],
             width=180,
         ).pack(side="left", padx=(5, 15))
@@ -191,6 +191,12 @@ class TranscribeWindow(ctk.CTkToplevel):
         if self._is_running:
             return
 
+        # 检测 ffmpeg 可用性
+        ffmpeg_ok, ffmpeg_msg = FileTranscriber.check_ffmpeg()
+        if not ffmpeg_ok:
+            self._status_label.configure(text=ffmpeg_msg, text_color="red")
+            return
+
         # 重置状态
         self._is_running = True
         self._segments = []
@@ -203,11 +209,11 @@ class TranscribeWindow(ctk.CTkToplevel):
         # 解析模型和语言
         model_reverse = {
             "Tiny (75MB, 最快)": "tiny",
-            "Base (150MB, 推荐)": "base",
-            "Small (500MB, 高精度)": "small",
-            "Medium (1.5GB, 专业)": "medium",
+            "Base (150MB)": "base",
+            "Small (500MB, 推荐)": "small",
+            "Medium (1.5GB, 高精度)": "medium",
         }
-        model_size = model_reverse.get(self._model_var.get(), "small")
+        model_size = model_reverse.get(self._model_var.get(), "medium")
 
         lang_reverse = {"中文": "zh", "English": "en", "日本語": "ja", "自动检测": None}
         language = lang_reverse.get(self._lang_var.get())
@@ -350,8 +356,8 @@ class TranscribeWindow(ctk.CTkToplevel):
         """模型大小 -> 显示文本"""
         mapping = {
             "tiny": "Tiny (75MB, 最快)",
-            "base": "Base (150MB, 推荐)",
-            "small": "Small (500MB, 高精度)",
-            "medium": "Medium (1.5GB, 专业)",
+            "base": "Base (150MB)",
+            "small": "Small (500MB, 推荐)",
+            "medium": "Medium (1.5GB, 高精度)",
         }
-        return mapping.get(model_size, "Small (500MB, 高精度)")
+        return mapping.get(model_size, "Medium (1.5GB, 高精度)")

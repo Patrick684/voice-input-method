@@ -14,7 +14,7 @@ class Config:
         "hotkey": "right alt",
         "hotkey_mode": "hold",  # hold: 按住录音, toggle: 切换录音
         # 语音识别设置
-        "model_size": "small",  # tiny, base, small, medium, large
+        "model_size": "medium",  # tiny, base, small,medium,large
         "language": "zh",  # zh: 中文, en: 英文, None: 自动检测
         "beam_size": 5,
         "compute_type": "int8",  # int8, float16, float32
@@ -51,7 +51,7 @@ class Config:
         # 流式识别设置
         "streaming_enabled": False,  # 流式识别开关（默认关闭，保守上线）
         "stream_silence_duration": 0.8,  # 静音切句时长 (秒)
-        "stream_silence_threshold": 0.01,  # 静音阈值 (RMS)
+        "stream_silence_threshold": 0.015,  # 静音阈值 (RMS，自适应底噪时会覆盖)
     }
 
     def __init__(self, config_dir: Optional[str] = None):

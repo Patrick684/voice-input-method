@@ -61,7 +61,7 @@ python main.py
 python main.py
 ```
 
-首次启动会自动下载 Whisper small 模型（约 500MB）。详细安装说明见 [install.md](install.md)。
+首次启动会自动下载 Whisper medium 模型（约 1.5GB）。详细安装说明见 [install.md](install.md)。
 
 ### 遇到问题？
 

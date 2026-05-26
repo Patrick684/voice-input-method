@@ -111,11 +111,40 @@ class WhisperEngine:
             self._model = None
 
     # 语言对应的引导提示词（引导 Whisper 输出正确的文字风格）
+    # 注意：不引导标点输出，标点由专门的 CT-Transformer 模型恢复
     LANGUAGE_PROMPTS = {
-        "zh": "以下是普通话的句子，使用简体中文转录。",
+        "zh": "以下是普通话的句子，请使用简体中文转录。",
         "en": "The following is English speech.",
         "ja": "以下は日本語の音声です。",
     }
+
+    @staticmethod
+    def _strip_punctuation(text: str) -> str:
+        """
+        移除 Whisper 输出中的残余标点，保留纯文本
+
+        标点恢复由 PunctuationRestorer (CT-Transformer) 负责，
+        此处清理 Whisper 自带的不准确标点，避免干扰后续处理。
+
+        Args:
+            text: Whisper 原始输出文本
+
+        Returns:
+            去除标点后的纯文本
+        """
+        import re
+
+        # 移除中英文常见标点符号
+        _punc = (
+            r"，。！？、；："              # 中文基本标点
+            "\u201c\u201d\u2018\u2019"  # 中文引号 ""
+            r"「」『』（）【】《》"         # 中文括号和书名号
+            r",\.\!\?;:'\""             # 英文基本标点
+            r"\[\]\(\)"                  # 英文括号
+            r"\-\—\…·"                   # 破折号、省略号、中点
+        )
+        text = re.sub(f"[{_punc}]", "", text)
+        return text.strip()
 
     @staticmethod
     def _normalize_audio(
@@ -236,6 +265,11 @@ class WhisperEngine:
                 text_parts.append(segment.text)
 
             text = "".join(text_parts).strip()
+
+            # 清理 Whisper 残余标点，输出纯文本供 CT-Transformer 恢复标点
+            if text:
+                text = self._strip_punctuation(text)
+
             return text if text else None
 
         except Exception as e:

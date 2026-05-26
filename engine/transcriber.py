@@ -1,5 +1,7 @@
 """文件转写引擎 - 支持音频/视频文件转文字并输出带时间戳的字幕"""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,8 +33,8 @@ class FileTranscriber:
 
     # Whisper 模型对应的引导提示词
     LANGUAGE_PROMPTS = {
-        "zh": "以下是普通话的句子，使用简体中文转录。",
-        "en": "The following is English speech.",
+        "zh": "以下是普通话的句子，请使用简体中文转录，注意正确使用逗号、句号等标点符号。",
+        "en": "The following is English speech. Use proper punctuation including commas and periods.",
         "ja": "以下は日本語の音声です。",
     }
 
@@ -63,15 +65,36 @@ class FileTranscriber:
         if self._model is not None:
             return
 
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
 
-        download_root = self.cache_dir if self.cache_dir else None
-        self._model = WhisperModel(
-            self.model_size,
-            device=self.device,
-            compute_type=self.compute_type,
-            download_root=download_root,
-        )
+            download_root = self.cache_dir if self.cache_dir else None
+            self._model = WhisperModel(
+                self.model_size,
+                device=self.device,
+                compute_type=self.compute_type,
+                download_root=download_root,
+            )
+        except Exception as e:
+            raise RuntimeError(f"模型加载失败: {e}")
+
+    @staticmethod
+    def check_ffmpeg() -> tuple[bool, str]:
+        """
+        检测 ffmpeg 是否可用
+
+        Returns:
+            (可用, 信息描述)
+        """
+        try:
+            import shutil
+
+            ffmpeg_path = shutil.which("ffmpeg")
+            if ffmpeg_path:
+                return True, f"ffmpeg 已安装: {ffmpeg_path}"
+            return False, "未找到 ffmpeg，转写功能需要安装 ffmpeg"
+        except Exception as e:
+            return False, f"ffmpeg 检测异常: {e}"
 
     def extract_audio(self, file_path: str) -> np.ndarray:
         """
@@ -87,6 +110,7 @@ class FileTranscriber:
             ImportError: pydub 未安装
             FileNotFoundError: 文件不存在
             ValueError: 不支持的文件格式
+            RuntimeError: ffmpeg 未安装或解码失败
         """
         from pydub import AudioSegment
 
@@ -100,8 +124,24 @@ class FileTranscriber:
 
         logger.info(f"提取音频: {path.name} ({ext})")
 
-        # pydub 自动处理音视频格式
-        audio = AudioSegment.from_file(str(path))
+        try:
+            # pydub 自动处理音视频格式
+            audio = AudioSegment.from_file(str(path))
+        except FileNotFoundError:
+            raise RuntimeError(
+                "未找到 ffmpeg。请安装 ffmpeg 后重试:\n"
+                "  Windows: winget install ffmpeg 或 choco install ffmpeg\n"
+                "  Linux: sudo apt install ffmpeg\n"
+                "  macOS: brew install ffmpeg"
+            )
+        except Exception as e:
+            error_msg = str(e)
+            if "ffmpeg" in error_msg.lower() or "ffprobe" in error_msg.lower():
+                raise RuntimeError(
+                    f"音频解码失败，可能缺少 ffmpeg: {error_msg}\n"
+                    "请安装 ffmpeg: winget install ffmpeg"
+                )
+            raise RuntimeError(f"音频解码失败: {error_msg}")
 
         # 转为 Whisper 所需格式
         audio = audio.set_frame_rate(16000).set_channels(1)
