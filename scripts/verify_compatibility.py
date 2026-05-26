@@ -1,8 +1,11 @@
 """
 用途：语音输入法项目兼容性验证脚本，检测运行环境、依赖安装、硬件加速等
 示例：python scripts/verify_compatibility.py
+      python scripts/verify_compatibility.py --report     # 生成环境报告（用于反馈排查）
+      python scripts/verify_compatibility.py --quick-test # 快速测试核心功能
 """
 
+import argparse
 import importlib
 import os
 import platform
@@ -636,6 +639,170 @@ class CompatibilityChecker:
 
         print("=" * 60)
 
+    def generate_report(self) -> str:
+        """生成一键环境报告，方便用户复制粘贴给开发者排查"""
+        if not self._results:
+            self.run_all_checks()
+
+        lines: list[str] = []
+        lines.append("===== 环境报告 =====")
+        lines.append(f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append("")
+
+        # 环境信息
+        lines.append(
+            f"OS: {platform.system()} {platform.version()} ({platform.machine()})"
+        )
+        lines.append(f"Python: {sys.version}")
+        lines.append(f"可执行文件: {sys.executable}")
+
+        # 核心依赖版本
+        lines.append("")
+        lines.append("--- 依赖 ---")
+        for pkg in self.CORE_DEPENDENCIES:
+            try:
+                mod = importlib.import_module(pkg)
+                ver = getattr(mod, "__version__", "已安装")
+                lines.append(f"{pkg}: {ver}")
+            except ImportError:
+                lines.append(f"{pkg}: 未安装")
+
+        for pkg in self.OPTIONAL_DEPENDENCIES:
+            try:
+                mod = importlib.import_module(pkg)
+                ver = getattr(mod, "__version__", "已安装")
+                lines.append(f"{pkg}: {ver} (可选)")
+            except ImportError:
+                lines.append(f"{pkg}: 未安装 (可选)")
+
+        # GPU 信息
+        lines.append("")
+        lines.append("--- GPU ---")
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                props = torch.cuda.get_device_properties(0)
+                lines.append(f"CUDA: {torch.version.cuda}")
+                lines.append(
+                    f"GPU: {props.name} ({props.total_memory / 1024**3:.1f}GB)"
+                )
+            else:
+                lines.append("CUDA: 不可用 (CPU 模式)")
+        except ImportError:
+            lines.append("PyTorch: 未安装 (CPU 模式)")
+
+        # 检查结果
+        lines.append("")
+        lines.append("--- 检测结果 ---")
+        for msg, detail, ok in self._results:
+            status = "OK" if ok else "FAIL"
+            line = f"[{status}] {msg}"
+            if detail and not ok:
+                line += f" -> {detail}"
+            lines.append(line)
+
+        if self._warnings:
+            lines.append("")
+            lines.append("--- 警告 ---")
+            for w in self._warnings:
+                lines.append(f"  ! {w}")
+
+        # 结论
+        req_passed = sum(
+            1 for m, _, ok in self._results if ok and not m.startswith("[可选]")
+        )
+        req_total = sum(1 for m, _, _ in self._results if not m.startswith("[可选]"))
+        lines.append("")
+        lines.append(f"结果: {req_passed}/{req_total} 必选检查通过")
+        lines.append("==================")
+
+        report = "\n".join(lines)
+        return report
+
+    @staticmethod
+    def quick_test():
+        """极简核心功能测试：加载模型 -> 模拟推理 -> 后处理"""
+        print("===== 核心功能快速测试 =====")
+        steps = [
+            ("导入核心模块", "_test_imports"),
+            ("加载 Whisper small 模型", "_test_model_load"),
+            ("后处理规则引擎", "_test_post_processor"),
+            ("热词管理器", "_test_hotword_manager"),
+        ]
+
+        passed = 0
+        for name, method in steps:
+            try:
+                getattr(CompatibilityChecker, method)()
+                print(f"  [OK] {name}")
+                passed += 1
+            except Exception as e:
+                print(f"  [FAIL] {name}: {e}")
+
+        print()
+        if passed == len(steps):
+            print(f"结果: {passed}/{len(steps)} 全部通过，核心功能正常!")
+        else:
+            print(
+                f"结果: {passed}/{len(steps)} 通过，请运行 python scripts/verify_compatibility.py 详细检查"
+            )
+        print("==============================")
+
+    @staticmethod
+    def _test_imports():
+        """测试核心模块能否导入"""
+        importlib.import_module("faster_whisper")
+        importlib.import_module("sounddevice")
+        importlib.import_module("keyboard")
+        importlib.import_module("pyperclip")
+
+    @staticmethod
+    def _test_model_load():
+        """测试模型能否加载"""
+        from faster_whisper import WhisperModel
+
+        root = CompatibilityChecker._get_project_root()
+        sys.path.insert(0, str(root))
+        from config import Config
+
+        config = Config()
+        model_size = config.get("model_size", "small")
+        cache_dir = str(config.model_cache_dir)
+
+        # 通过 faster-whisper 的下载目录加载模型（会自动查找已缓存的模型）
+        model = WhisperModel(
+            model_size,
+            device="cpu",
+            compute_type="int8",
+            download_root=cache_dir,
+        )
+        del model
+
+    @staticmethod
+    def _test_post_processor():
+        """测试后处理规则引擎"""
+        root = CompatibilityChecker._get_project_root()
+        sys.path.insert(0, str(root))
+        from engine.post_processor import ReplaceRule
+
+        rule = ReplaceRule("chat GPT", "ChatGPT")
+        result = rule.apply("使用chat GPT对话")
+        assert "ChatGPT" in result, f"后处理规则未生效: {result}"
+
+    @staticmethod
+    def _test_hotword_manager():
+        """测试热词管理器"""
+        root = CompatibilityChecker._get_project_root()
+        sys.path.insert(0, str(root))
+        from engine.hotword_manager import HotwordManager
+
+        # 不传文件路径，仅测试内存中的构建逻辑
+        hw = HotwordManager()
+        hw._global_hotwords = ["测试"]
+        prompt = hw.build_initial_prompt(weight=1.0)
+        assert prompt is not None and "测试" in prompt
+
     @staticmethod
     def _get_project_root() -> Path:
         """获取项目根目录"""
@@ -656,6 +823,36 @@ class CompatibilityChecker:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="语音输入法环境兼容性检查")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="运行完整检查后生成环境报告（复制粘贴给开发者排查问题）",
+    )
+    parser.add_argument(
+        "--quick-test",
+        action="store_true",
+        help="快速测试核心功能（模型加载 + 后处理 + 热词）",
+    )
+    args = parser.parse_args()
+
+    if args.quick_test:
+        CompatibilityChecker.quick_test()
+        sys.exit(0)
+
     checker = CompatibilityChecker()
     success = checker.run_all_checks()
+
+    if args.report:
+        report = checker.generate_report()
+        print("\n" + report)
+        # 复制到剪贴板
+        try:
+            import pyperclip
+
+            pyperclip.copy(report)
+            print("\n报告已复制到剪贴板，可直接粘贴发送给开发者")
+        except Exception:
+            pass
+
     sys.exit(0 if success else 1)

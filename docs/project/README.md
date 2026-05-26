@@ -46,6 +46,9 @@ pip install -r requirements.txt
 
 # 验证安装
 python scripts/verify_compatibility.py
+
+# 快速测试核心功能（模型加载 + 后处理 + 热词）
+python scripts/verify_compatibility.py --quick-test
 ```
 
 ### 运行
@@ -59,6 +62,13 @@ python main.py
 ```
 
 首次启动会自动下载 Whisper small 模型（约 500MB）。详细安装说明见 [install.md](install.md)。
+
+### 遇到问题？
+
+```bash
+# 生成环境报告（自动复制到剪贴板），发给开发者排查
+python scripts/verify_compatibility.py --report
+```
 
 ## 使用方式
 
