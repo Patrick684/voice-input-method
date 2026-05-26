@@ -117,12 +117,36 @@ main.py
 │   ├── whisper_engine.py → faster-whisper
 │   ├── hotword_manager.py
 │   ├── punctuation_processor.py
-│   └── emoji_injector.py
+│   ├── emoji_injector.py
+│   └── post_processor.py
 ├── input/text_injector.py
 │   └── pyperclip, keyboard
 ├── hotkey/hotkey_manager.py
 │   └── keyboard, winsound
+├── utils/
+│   └── history.py
 └── ui/
     ├── tray_app.py → pystray, Pillow
     └── settings_window.py → customtkinter
 ```
+
+## 兼容性测试
+
+项目提供本地兼容性验证脚本（位于 `.qoder/scripts/testing/verify_compatibility.py`），新设备首次运行前建议执行：
+
+```bash
+python .qoder/scripts/testing/verify_compatibility.py
+```
+
+检测项目：
+
+| 检测类别 | 检测内容 | 失败级别 |
+|----------|----------|----------|
+| 操作系统 | Windows/Linux/macOS, 架构, 权限 | 必选 |
+| Python 版本 | 3.9~3.12, 64位 | 必选 |
+| 核心依赖 | numpy, faster-whisper, sounddevice 等 8 个包 | 必选 |
+| 可选依赖 | torch, pydub | 警告 |
+| 音频设备 | 麦克风设备检测 | 必选 |
+| GPU 加速 | NVIDIA CUDA / AMD ROCm / CPU 兜底 | 可选 |
+| 文件权限 | 配置目录/模型缓存可写 | 必选 |
+| Whisper 推理 | 模型加载 + CPU/GPU 推理测试 | 必选 |
