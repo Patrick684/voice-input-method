@@ -39,9 +39,80 @@ class CompatibilityChecker:
         "pydub",  # 音频文件处理
     ]
 
+    # 失败 -> 解决方案映射表
+    SOLUTIONS = {
+        "python_version": {
+            "title": "Python 版本不满足要求",
+            "fix": [
+                "使用 Conda 创建新环境: conda create -n voice_input python=3.12 -y",
+                "或从官网下载 Python 3.12: https://www.python.org/downloads/",
+            ],
+        },
+        "core_dependency": {
+            "title": "核心依赖缺失",
+            "fix": [
+                "标准安装: pip install -r requirements.txt",
+                "国内镜像: pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple",
+                "Linux 系统依赖: sudo apt install portaudio19-dev python3-dev (Debian/Ubuntu)",
+                "macOS 系统依赖: brew install portaudio",
+            ],
+        },
+        "audio_device": {
+            "title": "音频设备不可用",
+            "fix": [
+                "检查麦克风是否已连接并被系统识别",
+                "Windows: 设置 -> 系统 -> 声音 -> 输入设备",
+                "Linux: 确保用户在 audio 组: sudo usermod -aG audio $USER",
+                "macOS: 系统设置 -> 隐私与安全性 -> 麦克风",
+            ],
+        },
+        "gpu_inference": {
+            "title": "GPU 推理失败",
+            "fix": [
+                "CPU 模式可正常工作，GPU 为可选加速",
+                "安装 CUDA 版 PyTorch: pip install torch --index-url https://download.pytorch.org/whl/cu121",
+                "国内镜像: pip install torch --index-url https://download.pytorch.org/whl/cu121 -f https://mirror.sjtu.edu.cn/pytorch-wheels/torch_stable.html",
+            ],
+        },
+        "whisper_inference": {
+            "title": "Whisper 推理失败",
+            "fix": [
+                "重装 faster-whisper: pip install --force-reinstall faster-whisper",
+                "检查模型缓存目录是否完整: 删除后重新下载",
+                "手动下载模型: python download_model_from_mirror.py",
+            ],
+        },
+        "file_permission": {
+            "title": "文件权限不足",
+            "fix": [
+                "Windows: 以管理员身份运行命令提示符",
+                "Linux: 检查目录权限: chmod -R u+w ~/.config/VoiceInput",
+                "macOS: 确保终端有完全磁盘访问权限",
+            ],
+        },
+        "hotkey_permission": {
+            "title": "快捷键权限不足",
+            "fix": [
+                "Windows: 右键快捷方式 -> 以管理员身份运行",
+                "macOS: 系统设置 -> 隐私与安全性 -> 辅助功能 -> 添加应用",
+                "Linux: 通常无需特殊权限，如遇到 X11 问题可尝试 xhost +local:",
+            ],
+        },
+        "model_download": {
+            "title": "模型下载失败/缓慢",
+            "fix": [
+                "使用镜像下载: python download_model_from_mirror.py",
+                "手动下载: https://huggingface.co/Systran/faster-whisper-small",
+                "放置路径: %APPDATA%/VoiceInput/models/ (Windows)",
+                "放置路径: ~/.config/VoiceInput/models/ (Linux/macOS)",
+            ],
+        },
+    }
+
     def __init__(self):
         self._results: list[Tuple[str, str, bool]] = []
         self._warnings: list[str] = []
+        self._failed_categories: set[str] = set()
 
     def run_all_checks(self) -> bool:
         """
@@ -66,6 +137,7 @@ class CompatibilityChecker:
 
         # 输出汇总
         self._print_summary()
+        self._print_solutions()
 
         passed = all(ok for _, _, ok in self._results if not _.startswith("[可选]"))
         return passed
@@ -91,6 +163,9 @@ class CompatibilityChecker:
             f"不支持的操作系统: {os_name}（支持: {supported_os}）",
         )
 
+        if not is_supported:
+            self._failed_categories.add("core_dependency")
+
         # Windows 特定检查
         if os_name == "Windows":
             # 检查 Windows 版本（需要 Win10+）
@@ -107,6 +182,8 @@ class CompatibilityChecker:
                     True,
                     warn="非管理员权限可能影响全局快捷键注册",
                 )
+                if not is_admin:
+                    pass  # 非管理员是警告级别，不加入 _failed_categories
             except Exception:
                 self._record("管理员权限: 无法检测", True)
 
@@ -154,6 +231,8 @@ class CompatibilityChecker:
             is_above_min,
             f"Python 版本过低，需要 {self.MIN_PYTHON_VERSION[0]}.{self.MIN_PYTHON_VERSION[1]}+",
         )
+        if not is_above_min:
+            self._failed_categories.add("python_version")
 
         # 最高版本检查（警告级别）
         is_below_max = (version.major, version.minor) <= self.MAX_PYTHON_VERSION
@@ -185,6 +264,7 @@ class CompatibilityChecker:
                 self._record(f"{package}: {version}", True)
             except ImportError:
                 self._record(f"{package}: 未安装", False, f"缺少核心依赖: {package}")
+                self._failed_categories.add("core_dependency")
 
     # ---- 可选依赖检查 ----
 
@@ -227,9 +307,11 @@ class CompatibilityChecker:
                 )
             else:
                 self._record("音频输入设备: 无可用设备", False, "未检测到麦克风设备")
+                self._failed_categories.add("audio_device")
 
         except Exception as e:
             self._record(f"音频设备检测失败: {e}", False, f"sounddevice 异常: {e}")
+            self._failed_categories.add("audio_device")
 
     # ---- GPU 加速检查 ----
 
@@ -463,6 +545,7 @@ class CompatibilityChecker:
                 False,
                 f"Whisper 推理异常: {e}",
             )
+            self._failed_categories.add("whisper_inference")
 
     # ---- 辅助方法 ----
 
@@ -516,6 +599,40 @@ class CompatibilityChecker:
             for m, e, ok in required:
                 if not ok:
                     print(f"  - {e}")
+
+        print("=" * 60)
+
+    def _print_solutions(self):
+        """根据失败项输出对应的解决方案"""
+        # 警告级别也提供解决方案（如 GPU cuBLAS 缺失、非管理员等）
+        warn_categories: set[str] = set()
+        for w in self._warnings:
+            if "GPU" in w or "cuBLAS" in w or "cuda" in w.lower():
+                warn_categories.add("gpu_inference")
+            if "管理员" in w or "admin" in w.lower():
+                warn_categories.add("hotkey_permission")
+
+        all_categories = self._failed_categories | warn_categories
+
+        if not all_categories:
+            return
+
+        print("\n" + "=" * 60)
+        print("问题解决方案")
+        print("=" * 60)
+
+        for category in sorted(all_categories):
+            solution = self.SOLUTIONS.get(category)
+            if not solution:
+                continue
+
+            status = "失败" if category in self._failed_categories else "警告"
+            print(f"\n[{status}] {solution['title']}:")
+            for fix in solution["fix"]:
+                print(f"  → {fix}")
+
+        if not self._failed_categories:
+            print("\n提示: 以上为警告级别建议，不影响基本功能运行")
 
         print("=" * 60)
 
