@@ -295,6 +295,34 @@ class SettingsWindow(ctk.CTkToplevel):
             variable=self.history_var,
         ).pack(anchor="w", pady=(0, 10))
 
+        # 流式识别
+        ctk.CTkLabel(tab, text="流式识别", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
+
+        self.streaming_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="启用流式识别（边说边识别）",
+            variable=self.streaming_var,
+        ).pack(anchor="w", pady=(0, 5))
+
+        # 静音切句时长
+        silence_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        silence_frame.pack(fill="x", pady=(0, 5))
+        ctk.CTkLabel(silence_frame, text="静音切句时长:").pack(side="left")
+        self.silence_duration_var = ctk.IntVar(value=8)  # 0.8s = 8 (x0.1)
+        self.silence_duration_label = ctk.CTkLabel(silence_frame, text="0.8s", width=40)
+        self.silence_duration_label.pack(side="right")
+        ctk.CTkSlider(
+            silence_frame,
+            from_=5,
+            to=20,
+            number_of_steps=15,
+            variable=self.silence_duration_var,
+            command=self._on_silence_duration_changed,
+        ).pack(side="right", fill="x", expand=True, padx=(5, 5))
+
     def _create_hotwords_tab(self):
         """热词管理选项卡"""
         tab = self.tabview.add("热词管理")
@@ -397,6 +425,11 @@ class SettingsWindow(ctk.CTkToplevel):
         """主题切换回调"""
         theme_map = {"跟随系统": "system", "亮色": "light", "暗色": "dark"}
         ctk.set_appearance_mode(theme_map.get(choice, "system"))
+
+    def _on_silence_duration_changed(self, value):
+        """静音切句时长滑块回调"""
+        seconds = int(value) / 10
+        self.silence_duration_label.configure(text=f"{seconds:.1f}s")
 
     def _refresh_history(self):
         """刷新历史记录显示"""
@@ -523,6 +556,12 @@ class SettingsWindow(ctk.CTkToplevel):
         # 历史记录
         self.history_var.set(self.config.get("history_enabled", True))
 
+        # 流式识别
+        self.streaming_var.set(self.config.get("streaming_enabled", False))
+        silence_val = self.config.get("stream_silence_duration", 0.8)
+        self.silence_duration_var.set(int(silence_val * 10))
+        self.silence_duration_label.configure(text=f"{silence_val:.1f}s")
+
         # 主题
         theme_map = {"system": "跟随系统", "light": "亮色", "dark": "暗色"}
         self.theme_var.set(
@@ -622,6 +661,14 @@ class SettingsWindow(ctk.CTkToplevel):
         # 历史记录
         if self.history_var.get() != self.config.get("history_enabled"):
             changes["history_enabled"] = self.history_var.get()
+
+        # 流式识别
+        if self.streaming_var.get() != self.config.get("streaming_enabled"):
+            changes["streaming_enabled"] = self.streaming_var.get()
+
+        silence_dur = self.silence_duration_var.get() / 10
+        if silence_dur != self.config.get("stream_silence_duration"):
+            changes["stream_silence_duration"] = silence_dur
 
         # 主题
         theme_reverse = {"跟随系统": "system", "亮色": "light", "暗色": "dark"}

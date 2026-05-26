@@ -100,6 +100,29 @@ emoji 注入文本 (str)
 | 文本输入 | ~200 ms | 可忽略 |
 | **总计** | **<2 秒** | **<500 MB** |
 
+## 流式识别流水线
+
+当启用流式识别时，流水线变为边说边识别模式：
+
+```
+按住快捷键 → 录音采集 → StreamVAD 切句 → 逐句识别 → 后处理 → 逐句粘贴
+   ↓            ↓            ↓               ↓          ↓          ↓
+HotkeyMgr   Recorder    StreamVAD       Whisper     后处理链   clipboard
+            (sd回调)    (能量检测)      Engine               (每句即粘)
+```
+
+流式模式关键变化：
+- **录音采集**: 通过 `on_audio_chunk` 回调实时将音频块送入 StreamVAD
+- **StreamVAD 切句**: 基于 RMS 能量检测静音段，静音持续超过阈值 (0.8s) 时判定句子结束
+- **逐句识别**: 每个句子独立送入 Whisper 识别，识别结果经后处理后立即粘贴
+- **剪贴板策略**: 录音开始时保存剪贴板，录音结束后统一恢复
+- **尾句处理**: 松开按键时，将 StreamVAD 缓冲区剩余音频作为尾句处理
+
+配置参数：
+- `streaming_enabled`: 是否启用流式识别 (默认 False)
+- `stream_silence_duration`: 静音切句时长，单位秒 (默认 0.8)
+- `stream_silence_threshold`: 静音阈值 RMS (默认 0.01)
+
 ## 错误处理
 
 - 录音失败: 检查设备权限，显示通知

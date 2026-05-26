@@ -33,6 +33,7 @@
 | engine | `engine/punctuation_processor.py` | 中文标点优化后处理 |
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
 | engine | `engine/post_processor.py` | 后处理规则替换引擎 |
+| engine | `engine/stream_vad.py` | 流式 VAD 检测器，实时切句 |
 | input | `input/text_injector.py` | 剪贴板+粘贴文本输入 |
 | hotkey | `hotkey/hotkey_manager.py` | 全局快捷键监听 |
 | ui | `ui/tray_app.py` | 系统托盘图标和菜单 |
@@ -118,7 +119,8 @@ main.py
 │   ├── hotword_manager.py
 │   ├── punctuation_processor.py
 │   ├── emoji_injector.py
-│   └── post_processor.py
+│   ├── post_processor.py
+│   └── stream_vad.py → numpy
 ├── input/text_injector.py
 │   └── pyperclip, keyboard
 ├── hotkey/hotkey_manager.py

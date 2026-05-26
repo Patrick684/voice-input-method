@@ -48,6 +48,10 @@ class Config:
         # 历史记录设置
         "history_enabled": True,
         "history_max_records": 500,
+        # 流式识别设置
+        "streaming_enabled": False,  # 流式识别开关（默认关闭，保守上线）
+        "stream_silence_duration": 0.8,  # 静音切句时长 (秒)
+        "stream_silence_threshold": 0.01,  # 静音阈值 (RMS)
     }
 
     def __init__(self, config_dir: Optional[str] = None):

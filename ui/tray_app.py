@@ -14,6 +14,7 @@ class AppState(Enum):
     IDLE = "idle"
     RECORDING = "recording"
     PROCESSING = "processing"
+    STREAMING = "streaming"  # 流式识别：录音中 + 逐句识别
     DISABLED = "disabled"
 
 
@@ -25,6 +26,7 @@ class TrayApp:
         AppState.IDLE: (100, 200, 100),  # 绿色 - 空闲
         AppState.RECORDING: (220, 50, 50),  # 红色 - 录音中
         AppState.PROCESSING: (50, 150, 220),  # 蓝色 - 识别中
+        AppState.STREAMING: (220, 160, 50),  # 橙色 - 录音中+逐句识别
         AppState.DISABLED: (150, 150, 150),  # 灰色 - 已禁用
     }
 
@@ -32,6 +34,7 @@ class TrayApp:
         AppState.IDLE: "语音输入法 - 就绪 (按住 {hotkey} 说话)",
         AppState.RECORDING: "语音输入法 - 录音中...",
         AppState.PROCESSING: "语音输入法 - 识别中...",
+        AppState.STREAMING: "语音输入法 - 录音中 (逐句识别)",
         AppState.DISABLED: "语音输入法 - 已停止",
     }
 
@@ -76,6 +79,10 @@ class TrayApp:
             # 录音状态 - 实心圆点
             r = 10
             draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=white)
+        elif state == AppState.STREAMING:
+            # 流式识别 - 双圆点（录音中 + 识别中）
+            draw.ellipse([cx - 14, cy - 8, cx - 2, cy + 8], fill=white)
+            draw.ellipse([cx + 2, cy - 8, cx + 14, cy + 8], fill=white)
         elif state == AppState.PROCESSING:
             # 识别中 - 音波线条
             draw.rectangle([cx - 2, cy - 16, cx + 2, cy + 16], fill=white)
@@ -166,6 +173,7 @@ class TrayApp:
             AppState.IDLE: "状态: 就绪",
             AppState.RECORDING: "状态: 录音中...",
             AppState.PROCESSING: "状态: 识别中...",
+            AppState.STREAMING: "状态: 录音中 (逐句识别)",
             AppState.DISABLED: "状态: 已停止",
         }
         self._status_text = status_map.get(state, "状态: 未知")

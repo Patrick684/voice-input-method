@@ -5,6 +5,7 @@ import signal
 import logging
 import threading
 import queue
+import numpy as np
 from typing import Optional
 
 # 配置 HuggingFace 国内镜像（必须在 import faster-whisper/huggingface_hub 之前设置）
@@ -18,6 +19,7 @@ from engine.hotword_manager import HotwordManager
 from engine.punctuation_processor import PunctuationProcessor
 from engine.emoji_injector import EmojiInjector
 from engine.post_processor import PostProcessor
+from engine.stream_vad import StreamVAD
 from input.text_injector import TextInjector
 from hotkey.hotkey_manager import HotkeyManager
 from ui.tray_app import TrayApp, AppState
@@ -59,15 +61,31 @@ class VoiceInputApp:
         # 设置窗口引用
         self._settings_window = None
 
+        # 流式识别状态
+        self._streaming_active = False  # 当前是否处于流式录音中
+        self._stream_sentence_count = 0  # 本次流式录音已识别的句子数
+        self._stream_clipboard_saved = False  # 是否已保存剪贴板
+        self._original_clipboard = None  # 流式模式保存的原始剪贴板内容
+
         # 初始化各模块
         self._init_modules()
 
     def _init_modules(self):
         """初始化所有模块"""
-        # 音频录制器
+        # 流式 VAD 检测器（提前初始化，因为 AudioRecorder 需要它的 feed 回调）
+        self.stream_vad = StreamVAD(
+            sample_rate=self.config.get("sample_rate", 16000),
+            silence_threshold=self.config.get("stream_silence_threshold", 0.01),
+            silence_duration=self.config.get("stream_silence_duration", 0.8),
+            on_sentence_end=self._on_sentence_detected,
+        )
+
+        # 音频录制器（流式模式下将 StreamVAD.feed 作为实时回调）
+        streaming_enabled = self.config.get("streaming_enabled", False)
         self.recorder = AudioRecorder(
             sample_rate=self.config.get("sample_rate", 16000),
             device=self.config.get("audio_device"),
+            on_audio_chunk=self.stream_vad.feed if streaming_enabled else None,
         )
 
         # 语音识别引擎
@@ -230,6 +248,41 @@ class VoiceInputApp:
                 except Exception as e:
                     self._result_queue.put(("transcription_failed", str(e)))
 
+            elif task_type == "stream_transcribe":
+                # 流式识别：识别单个句子
+                try:
+                    audio_data = task_data
+
+                    initial_prompt = self.hotword_manager.build_initial_prompt(
+                        weight=self.config.get("hotword_weight", 1.5),
+                        max_words=self.config.get("hotword_max_count", 30),
+                    )
+
+                    text = self.engine.transcribe(
+                        audio_data,
+                        language=self.config.get("language"),
+                        initial_prompt=initial_prompt,
+                        beam_size=self.config.get("beam_size", 5),
+                        vad_filter=self.config.get("vad_filter", True),
+                        vad_threshold=self.config.get("vad_threshold", 0.5),
+                    )
+
+                    if text:
+                        text = self.punctuation_processor.process(
+                            text, language=self.config.get("language")
+                        )
+                        text = self.emoji_injector.process(text)
+                        if self.config.get("post_process_enabled", True):
+                            text = self.post_processor.process(text)
+                        self._result_queue.put(("stream_transcription_complete", text))
+                    else:
+                        self._result_queue.put(
+                            ("stream_transcription_failed", "流式句子识别失败")
+                        )
+
+                except Exception as e:
+                    self._result_queue.put(("stream_transcription_failed", str(e)))
+
         logger.info("Worker 线程已退出")
 
     def _handle_result(self, result_type: str, data):
@@ -269,6 +322,50 @@ class VoiceInputApp:
             if self.config.get("show_notifications", True):
                 self.tray.show_notification("语音输入法", f"模型加载失败: {data}")
 
+        elif result_type == "stream_transcription_complete":
+            # 流式识别：单句完成，立即粘贴
+            self._stream_sentence_count += 1
+            logger.info(f"流式句子 #{self._stream_sentence_count}: {data}")
+
+            # 保存识别历史
+            if self.config.get("history_enabled", True):
+                self.history.add_record(
+                    text=data,
+                    model=self.config.get("model_size", "small"),
+                )
+
+            # 流式粘贴：不恢复剪贴板（在录音结束时统一恢复）
+            try:
+                import pyperclip
+                import keyboard
+                import time
+
+                pyperclip.copy(data)
+                time.sleep(0.03)
+                keyboard.send("ctrl+v")
+                time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"流式粘贴失败: {e}")
+
+            # 恢复录音状态图标（如果还在录音）
+            if self._streaming_active:
+                self.tray.set_state(AppState.RECORDING)
+            else:
+                # 最后一句（尾句）识别完成，恢复剪贴板并回到 IDLE
+                self._restore_stream_clipboard()
+                self._state = AppState.IDLE
+                self.tray.set_state(AppState.IDLE)
+
+        elif result_type == "stream_transcription_failed":
+            logger.error(f"流式句子识别失败: {data}")
+            # 流式模式下不因单句失败而中断，继续录音
+            if self._streaming_active:
+                self.tray.set_state(AppState.RECORDING)
+            else:
+                self._restore_stream_clipboard()
+                self._state = AppState.IDLE
+                self.tray.set_state(AppState.IDLE)
+
     # ---- 录音回调 ----
 
     def _on_recording_start(self):
@@ -283,10 +380,28 @@ class VoiceInputApp:
         self._state = AppState.RECORDING
         self.tray.set_state(AppState.RECORDING)
 
+        # 流式模式：重置 VAD 并保存剪贴板
+        if self.config.get("streaming_enabled", False):
+            self._streaming_active = True
+            self._stream_sentence_count = 0
+            self._stream_clipboard_saved = False
+            self._original_clipboard = None
+            self.stream_vad.reset()
+            # 提前保存剪贴板，流式粘贴时不再反复保存/恢复
+            if self.config.get("restore_clipboard", True):
+                try:
+                    import pyperclip
+
+                    self._original_clipboard = pyperclip.paste()
+                    self._stream_clipboard_saved = True
+                except Exception:
+                    pass
+
         if not self.recorder.start_recording():
             logger.error("无法启动录音")
             self._state = AppState.IDLE
             self.tray.set_state(AppState.IDLE)
+            self._streaming_active = False
 
     def _on_recording_stop(self):
         """停止录音回调（从快捷键线程调用）"""
@@ -295,6 +410,35 @@ class VoiceInputApp:
 
         audio_data = self.recorder.stop_recording()
 
+        # 流式模式：处理尾句
+        if self._streaming_active:
+            self._streaming_active = False
+            tail_audio = self.stream_vad.flush()
+            if tail_audio is not None and len(tail_audio) >= 1600:
+                logger.info(
+                    f"流式尾句: {len(tail_audio) / self.config.get('sample_rate', 16000):.1f}s"
+                )
+                self._state = AppState.PROCESSING
+                self.tray.set_state(AppState.PROCESSING)
+                self._task_queue.put(("stream_transcribe", tail_audio))
+                return
+
+            # 流式模式无尾句：恢复剪贴板并回到 IDLE
+            self._restore_stream_clipboard()
+            if self._stream_sentence_count == 0:
+                # 流式模式下一句都没识别出来，回退到批处理
+                if audio_data is not None and len(audio_data) >= 1600:
+                    self._state = AppState.PROCESSING
+                    self.tray.set_state(AppState.PROCESSING)
+                    self._task_queue.put(("transcribe", audio_data))
+                    return
+                logger.info("流式录音数据不足，跳过识别")
+
+            self._state = AppState.IDLE
+            self.tray.set_state(AppState.IDLE)
+            return
+
+        # 非流式模式：原有逻辑
         if audio_data is None or len(audio_data) < 1600:
             logger.info("录音数据不足，跳过识别")
             self._state = AppState.IDLE
@@ -316,6 +460,40 @@ class VoiceInputApp:
         self._state = AppState.IDLE
         self.tray.set_state(AppState.IDLE)
         logger.info("录音已取消")
+
+    # ---- 流式识别回调 ----
+
+    def _on_sentence_detected(self, audio_data: np.ndarray):
+        """流式 VAD 检测到句子边界回调（在音频线程中调用）"""
+        if not self._streaming_active:
+            return
+
+        if len(audio_data) < 1600:
+            return
+
+        # 更新状态为 STREAMING（录音中 + 识别中）
+        self.tray.set_state(AppState.STREAMING)
+
+        # 将句子音频送入识别队列
+        self._task_queue.put(("stream_transcribe", audio_data))
+        logger.info(
+            f"流式句子 #{self._stream_sentence_count + 1}: "
+            f"{len(audio_data) / self.config.get('sample_rate', 16000):.1f}s"
+        )
+
+    def _restore_stream_clipboard(self):
+        """流式模式结束后恢复剪贴板"""
+        if self._stream_clipboard_saved and self._original_clipboard is not None:
+            try:
+                import pyperclip
+                import time
+
+                time.sleep(0.3)  # 等待最后一次粘贴完成
+                pyperclip.copy(self._original_clipboard)
+            except Exception:
+                pass
+        self._stream_clipboard_saved = False
+        self._original_clipboard = None
 
     # ---- 模型加载 ----
 
@@ -408,6 +586,21 @@ class VoiceInputApp:
         # 更新主题
         if "theme" in changes:
             ctk.set_appearance_mode(changes["theme"])
+
+        # 更新流式识别设置
+        if "streaming_enabled" in changes:
+            enabled = changes["streaming_enabled"]
+            self.recorder.on_audio_chunk = self.stream_vad.feed if enabled else None
+
+        if "stream_silence_duration" in changes:
+            self.stream_vad.update_params(
+                silence_duration=changes["stream_silence_duration"]
+            )
+
+        if "stream_silence_threshold" in changes:
+            self.stream_vad.update_params(
+                silence_threshold=changes["stream_silence_threshold"]
+            )
 
     # ---- 服务控制 ----
 
