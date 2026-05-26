@@ -24,6 +24,7 @@ from input.text_injector import TextInjector
 from hotkey.hotkey_manager import HotkeyManager
 from ui.tray_app import TrayApp, AppState
 from ui.settings_window import SettingsWindow
+from ui.transcribe_window import TranscribeWindow
 from utils.history import RecognitionHistory
 
 # 应用主题配置
@@ -60,6 +61,8 @@ class VoiceInputApp:
 
         # 设置窗口引用
         self._settings_window = None
+        # 转写窗口引用
+        self._transcribe_window = None
 
         # 流式识别状态
         self._streaming_active = False  # 当前是否处于流式录音中
@@ -151,6 +154,7 @@ class VoiceInputApp:
             on_settings=self._show_settings,
             on_quit=self._quit,
             on_toggle=self._toggle_service,
+            on_transcribe=self._show_transcribe,
         )
         self.tray.setup()
 
@@ -527,18 +531,59 @@ class VoiceInputApp:
 
     def _pump_tk_events(self):
         """持续处理 CustomTkinter 事件"""
+        has_window = False
         if self._settings_window is not None:
             try:
                 self._settings_window.update_idletasks()
-                self._settings_window.after(100, self._pump_tk_events)
+                has_window = True
             except Exception:
                 self._settings_window = None
+
+        if self._transcribe_window is not None:
+            try:
+                self._transcribe_window.update_idletasks()
+                has_window = True
+            except Exception:
+                self._transcribe_window = None
+
+        if has_window:
+            # 使用任一存活窗口的 after 方法继续轮询
+            window = self._settings_window or self._transcribe_window
+            if window:
+                window.after(100, self._pump_tk_events)
 
     def _on_settings_closed(self):
         """设置窗口关闭"""
         if self._settings_window:
             self._settings_window.destroy()
             self._settings_window = None
+
+    # ---- 转写窗口 ----
+
+    def _show_transcribe(self):
+        """显示转写窗口"""
+        # 如果窗口已存在且还在显示，直接置顶
+        if self._transcribe_window is not None:
+            try:
+                self._transcribe_window.focus()
+                return
+            except Exception:
+                self._transcribe_window = None
+
+        self._transcribe_window = TranscribeWindow(
+            model_size=self.config.get("model_size", "small"),
+            cache_dir=str(self.config.model_cache_dir),
+            device=self.config.get("device", "cpu"),
+            compute_type=self.config.get("compute_type", "int8"),
+        )
+        self._transcribe_window.protocol("WM_DELETE_WINDOW", self._on_transcribe_closed)
+        self._transcribe_window.after(100, self._pump_tk_events)
+
+    def _on_transcribe_closed(self):
+        """转写窗口关闭"""
+        if self._transcribe_window:
+            self._transcribe_window.destroy()
+            self._transcribe_window = None
 
     def _on_settings_changed(self, changes: dict):
         """处理设置变更"""

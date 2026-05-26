@@ -34,10 +34,12 @@
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
 | engine | `engine/post_processor.py` | 后处理规则替换引擎 |
 | engine | `engine/stream_vad.py` | 流式 VAD 检测器，实时切句 |
+| engine | `engine/transcriber.py` | 文件转写引擎，音视频转字幕 |
 | input | `input/text_injector.py` | 剪贴板+粘贴文本输入 |
 | hotkey | `hotkey/hotkey_manager.py` | 全局快捷键监听 |
 | ui | `ui/tray_app.py` | 系统托盘图标和菜单 |
 | ui | `ui/settings_window.py` | 设置窗口 UI（含热词管理/历史面板） |
+| ui | `ui/transcribe_window.py` | 文件转写窗口 UI |
 | utils | `utils/history.py` | 识别历史记录管理 |
 
 ## 线程模型
@@ -120,7 +122,8 @@ main.py
 │   ├── punctuation_processor.py
 │   ├── emoji_injector.py
 │   ├── post_processor.py
-│   └── stream_vad.py → numpy
+│   ├── stream_vad.py → numpy
+│   └── transcriber.py → pydub, faster-whisper
 ├── input/text_injector.py
 │   └── pyperclip, keyboard
 ├── hotkey/hotkey_manager.py

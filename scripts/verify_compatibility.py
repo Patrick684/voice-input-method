@@ -34,12 +34,12 @@ class CompatibilityChecker:
         "PIL",
         "keyboard",
         "pyperclip",
+        "pydub",
     ]
 
     # 可选依赖（缺失时降级运行）
     OPTIONAL_DEPENDENCIES = [
         "torch",  # GPU 加速
-        "pydub",  # 音频文件处理
     ]
 
     # 失败 -> 解决方案映射表

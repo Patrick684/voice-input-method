@@ -4,3 +4,4 @@ from .punctuation_processor import PunctuationProcessor as PunctuationProcessor
 from .emoji_injector import EmojiInjector as EmojiInjector
 from .post_processor import PostProcessor as PostProcessor
 from .stream_vad import StreamVAD as StreamVAD
+from .transcriber import FileTranscriber as FileTranscriber

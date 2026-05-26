@@ -123,6 +123,29 @@ HotkeyMgr   Recorder    StreamVAD       Whisper     后处理链   clipboard
 - `stream_silence_duration`: 静音切句时长，单位秒 (默认 0.8)
 - `stream_silence_threshold`: 静音阈值 RMS (默认 0.01)
 
+## 文件转写流水线
+
+音视频文件转写是独立于实时录音的另一个流水线，通过托盘菜单「转写文件...」触发：
+
+```
+选择文件 → pydub 提取音频 → Whisper 转写(带时间戳) → SRT/TXT 输出
+   ↓            ↓                   ↓                      ↓
+filedialog   AudioSegment      WhisperModel          保存字幕文件
+             (ffmpeg)        (without_timestamps=F)   (filedialog)
+```
+
+支持的格式：
+- 音频: mp3, wav, flac, m4a, ogg, wma, aac
+- 视频: mp4, mkv, avi, mov, wmv, webm（通过 pydub/ffmpeg 提取音频）
+
+输出格式：
+- SRT: 带时间戳的标准字幕格式，可用于视频播放器
+- TXT: 纯文本，每行一句
+
+依赖：
+- `pydub`: 音视频解码和音频重采样（16kHz mono float32）
+- `ffmpeg`: 系统级依赖，pydub 需要它来处理非 wav 格式
+
 ## 错误处理
 
 - 录音失败: 检查设备权限，显示通知

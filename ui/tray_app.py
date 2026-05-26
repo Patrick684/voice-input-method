@@ -44,6 +44,7 @@ class TrayApp:
         on_settings: Optional[Callable] = None,
         on_quit: Optional[Callable] = None,
         on_toggle: Optional[Callable[[bool], None]] = None,
+        on_transcribe: Optional[Callable] = None,
     ):
         self._hotkey = hotkey
         self._state = AppState.IDLE
@@ -52,6 +53,7 @@ class TrayApp:
         self._on_settings = on_settings
         self._on_quit = on_quit
         self._on_toggle = on_toggle
+        self._on_transcribe = on_transcribe
 
         self._icon: Optional[pystray.Icon] = None
         self._status_text = "状态: 就绪"
@@ -115,6 +117,10 @@ class TrayApp:
                 self._handle_settings,
                 default=True,  # 双击触发此项
             ),
+            pystray.MenuItem(
+                "转写文件...",
+                self._handle_transcribe,
+            ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "退出",
@@ -126,6 +132,11 @@ class TrayApp:
         """处理设置菜单点击"""
         if self._on_settings:
             self._on_settings()
+
+    def _handle_transcribe(self, icon, item):
+        """处理转写菜单点击"""
+        if self._on_transcribe:
+            self._on_transcribe()
 
     def _handle_quit(self, icon, item):
         """处理退出菜单点击"""
