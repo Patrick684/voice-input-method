@@ -95,9 +95,7 @@ class StreamVAD:
             self._use_silero = True
             logger.info("StreamVAD: Silero VAD 模型加载成功，使用神经网络检测")
         except Exception as e:
-            logger.warning(
-                f"StreamVAD: Silero VAD 加载失败 ({e})，降级为 RMS 能量检测"
-            )
+            logger.warning(f"StreamVAD: Silero VAD 加载失败 ({e})，降级为 RMS 能量检测")
             self._use_silero = False
 
     def feed(self, chunk: np.ndarray):

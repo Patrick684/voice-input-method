@@ -1,6 +1,7 @@
 """
 用途：验证音视频转写流水线是否正常工作
 """
+
 import sys
 import time
 from pathlib import Path
@@ -14,7 +15,12 @@ from config import Config
 
 def main():
     config = Config()
-    mp3_path = Path(__file__).resolve().parent.parent / ".qoder" / "scripts" / "057689500453-2404121807.mp3"
+    mp3_path = (
+        Path(__file__).resolve().parent.parent
+        / ".qoder"
+        / "scripts"
+        / "057689500453-2404121807.mp3"
+    )
 
     if not mp3_path.exists():
         print(f"错误: 测试文件不存在: {mp3_path}")
@@ -45,7 +51,7 @@ def main():
     print("[3/3] 开始转写（包含音频提取 + 模型加载 + 识别）...")
 
     def on_progress(text, progress):
-        print(f"      [{progress*100:.0f}%] {text}")
+        print(f"      [{progress * 100:.0f}%] {text}")
 
     t0 = time.time()
     segments = transcriber.transcribe(
