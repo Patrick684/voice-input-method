@@ -64,6 +64,10 @@ class VoiceInputApp:
         self._settings_window = None
         # 转写窗口引用
         self._transcribe_window = None
+        # Tkinter 根窗口（隐藏）
+        self._tk_root = None
+        # 线程安全的 UI 动作队列（pystray 回调 -> 主线程）
+        self._ui_actions: queue.Queue = queue.Queue()
 
         # 流式识别状态
         self._streaming_active = False  # 当前是否处于流式录音中
@@ -145,11 +149,38 @@ class VoiceInputApp:
             on_cancel=self._on_recording_cancel,
         )
 
+    def _ensure_tk_root(self):
+        """确保 Tkinter 根窗口已创建（隐藏窗口，用于驱动事件循环）"""
+        if self._tk_root is not None:
+            return
+        self._tk_root = ctk.CTk()
+        self._tk_root.withdraw()  # 隐藏主窗口
+        self._tk_root.overrideredirect(True)
+        logger.info("Tkinter 根窗口已创建")
+
+    def _schedule_ui_action(self, action):
+        """线程安全地将 UI 动作调度到主线程执行"""
+        self._ui_actions.put(action)
+
+    def _process_ui_actions(self):
+        """处理待执行的 UI 动作（主线程调用）"""
+        while True:
+            try:
+                action = self._ui_actions.get_nowait()
+                action()
+            except queue.Empty:
+                break
+            except Exception as e:
+                logger.error(f"UI 动作执行失败: {e}")
+
     def run(self):
         """启动应用"""
         # 应用保存的主题配置
         theme = self.config.get("theme", "system")
         ctk.set_appearance_mode(theme)
+
+        # 创建隐藏的 Tkinter 根窗口（驱动 CTkToplevel 事件循环）
+        self._ensure_tk_root()
 
         # 获取快捷键显示名称
         hotkey_display = self._get_hotkey_display()
@@ -157,10 +188,10 @@ class VoiceInputApp:
         # 创建托盘应用
         self.tray = TrayApp(
             hotkey=hotkey_display,
-            on_settings=self._show_settings,
+            on_settings=lambda: self._schedule_ui_action(self._show_settings),
             on_quit=self._quit,
             on_toggle=self._toggle_service,
-            on_transcribe=self._show_transcribe,
+            on_transcribe=lambda: self._schedule_ui_action(self._show_transcribe),
         )
         self.tray.setup()
 
@@ -181,14 +212,23 @@ class VoiceInputApp:
                 f"已启动，按住 {hotkey_display} 开始说话",
             )
 
-        # 主线程循环：处理结果 + 等待退出信号
+        # 主线程循环：处理结果 + Tkinter 事件 + UI 动作
         signal.signal(signal.SIGINT, lambda *_: self._quit())
 
         try:
             while not self._stop_event.is_set():
+                # 处理 Tkinter 事件（包括用户交互）
+                try:
+                    self._tk_root.update()
+                except Exception:
+                    pass
+
+                # 处理线程安全的 UI 动作
+                self._process_ui_actions()
+
                 # 非阻塞检查结果队列
                 try:
-                    result_type, result_data = self._result_queue.get(timeout=0.5)
+                    result_type, result_data = self._result_queue.get(timeout=0.05)
                     self._handle_result(result_type, result_data)
                 except queue.Empty:
                     pass
@@ -254,7 +294,8 @@ class VoiceInputApp:
                     )
 
                     if text:
-                        # 后处理流水线: 标点恢复(CT-Transformer) -> 语气修正 -> emoji -> 规则替换
+                        # 后处理流水线: 繁转简 -> 标点恢复(CT-Transformer) -> 语气修正 -> emoji -> 规则替换
+                        text = self._to_simplified(text)
                         text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
@@ -292,6 +333,7 @@ class VoiceInputApp:
 
                     if text:
                         # 流式后处理流水线（同批处理）
+                        text = self._to_simplified(text)
                         text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
@@ -533,49 +575,27 @@ class VoiceInputApp:
     # ---- 设置窗口 ----
 
     def _show_settings(self):
-        """显示设置窗口"""
+        """显示设置窗口（主线程调用）"""
         # 如果窗口已存在且还在显示，直接置顶
         if self._settings_window is not None:
             try:
-                self._settings_window.focus()
+                self._settings_window.deiconify()
+                self._settings_window.lift()
+                self._settings_window.focus_force()
                 return
             except Exception:
                 self._settings_window = None
 
+        self._ensure_tk_root()
         self._settings_window = SettingsWindow(
             self.config,
             on_settings_changed=self._on_settings_changed,
             hotword_manager=self.hotword_manager,
             post_processor=self.post_processor,
             history=self.history,
+            master=self._tk_root,
         )
         self._settings_window.protocol("WM_DELETE_WINDOW", self._on_settings_closed)
-
-        # 让 CustomTkinter 事件循环运行（非阻塞）
-        self._settings_window.after(100, self._pump_tk_events)
-
-    def _pump_tk_events(self):
-        """持续处理 CustomTkinter 事件"""
-        has_window = False
-        if self._settings_window is not None:
-            try:
-                self._settings_window.update_idletasks()
-                has_window = True
-            except Exception:
-                self._settings_window = None
-
-        if self._transcribe_window is not None:
-            try:
-                self._transcribe_window.update_idletasks()
-                has_window = True
-            except Exception:
-                self._transcribe_window = None
-
-        if has_window:
-            # 使用任一存活窗口的 after 方法继续轮询
-            window = self._settings_window or self._transcribe_window
-            if window:
-                window.after(100, self._pump_tk_events)
 
     def _on_settings_closed(self):
         """设置窗口关闭"""
@@ -586,23 +606,28 @@ class VoiceInputApp:
     # ---- 转写窗口 ----
 
     def _show_transcribe(self):
-        """显示转写窗口"""
+        """显示转写窗口（主线程调用）"""
         # 如果窗口已存在且还在显示，直接置顶
         if self._transcribe_window is not None:
             try:
-                self._transcribe_window.focus()
+                self._transcribe_window.deiconify()
+                self._transcribe_window.lift()
+                self._transcribe_window.focus_force()
                 return
             except Exception:
                 self._transcribe_window = None
 
+        self._ensure_tk_root()
         self._transcribe_window = TranscribeWindow(
             model_size=self.config.get("model_size", "small"),
             cache_dir=str(self.config.model_cache_dir),
             device=self.config.get("device", "cpu"),
             compute_type=self.config.get("compute_type", "int8"),
+            punctuation_restorer=self.punctuation_restorer,
+            punctuation_processor=self.punctuation_processor,
+            master=self._tk_root,
         )
         self._transcribe_window.protocol("WM_DELETE_WINDOW", self._on_transcribe_closed)
-        self._transcribe_window.after(100, self._pump_tk_events)
 
     def _on_transcribe_closed(self):
         """转写窗口关闭"""
@@ -680,6 +705,16 @@ class VoiceInputApp:
         self.hotkey_manager.set_active(active)
         logger.info(f"服务{'启动' if active else '停止'}")
 
+    @staticmethod
+    def _to_simplified(text: str) -> str:
+        """繁体转简体（自动检测语言时 Whisper 可能输出繁体）"""
+        try:
+            import zhconv
+
+            return zhconv.convert(text, "zh-cn")
+        except ImportError:
+            return text
+
     def _get_hotkey_display(self) -> str:
         """获取快捷键显示名称"""
         hotkey_map = {
@@ -706,6 +741,14 @@ class VoiceInputApp:
         # 清理托盘图标
         if hasattr(self, "tray"):
             self.tray.cleanup()
+
+        # 清理 Tkinter 根窗口
+        if self._tk_root is not None:
+            try:
+                self._tk_root.destroy()
+            except Exception:
+                pass
+            self._tk_root = None
 
         logger.info("已退出")
 

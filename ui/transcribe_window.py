@@ -19,6 +19,8 @@ class TranscribeWindow(ctk.CTkToplevel):
         cache_dir: Optional[str] = None,
         device: str = "cpu",
         compute_type: str = "int8",
+        punctuation_restorer=None,
+        punctuation_processor=None,
         master=None,
     ):
         super().__init__(master)
@@ -26,6 +28,8 @@ class TranscribeWindow(ctk.CTkToplevel):
         self._cache_dir = cache_dir
         self._device = device
         self._compute_type = compute_type
+        self._punctuation_restorer = punctuation_restorer
+        self._punctuation_processor = punctuation_processor
 
         # 转写状态
         self._transcriber: Optional[FileTranscriber] = None
@@ -114,6 +118,16 @@ class TranscribeWindow(ctk.CTkToplevel):
             values=["中文", "English", "日本語", "自动检测"],
             width=100,
         ).pack(side="left", padx=(5, 0))
+
+        # VAD 开关
+        vad_frame = ctk.CTkFrame(settings_frame, fg_color="transparent")
+        vad_frame.pack(fill="x", pady=(8, 0))
+        self._vad_var = ctk.BooleanVar(value=True)
+        ctk.CTkSwitch(
+            vad_frame,
+            text="启用语音活动检测 (VAD)（音乐类音频建议关闭）",
+            variable=self._vad_var,
+        ).pack(anchor="w")
 
         # ---- 操作区 ----
         action_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -224,12 +238,17 @@ class TranscribeWindow(ctk.CTkToplevel):
             cache_dir=self._cache_dir,
             device=self._device,
             compute_type=self._compute_type,
+            punctuation_restorer=self._punctuation_restorer,
+            punctuation_processor=self._punctuation_processor,
         )
+
+        # 在主线程中读取 Tkinter 变量（后台线程不能访问）
+        vad_filter = self._vad_var.get()
 
         # 后台线程执行转写
         thread = threading.Thread(
             target=self._transcribe_worker,
-            args=(file_path, language),
+            args=(file_path, language, vad_filter),
             daemon=True,
         )
         thread.start()
@@ -237,12 +256,15 @@ class TranscribeWindow(ctk.CTkToplevel):
         # 开始轮询进度
         self._poll_progress()
 
-    def _transcribe_worker(self, file_path: str, language: Optional[str]):
+    def _transcribe_worker(
+        self, file_path: str, language: Optional[str], vad_filter: bool
+    ):
         """后台转写线程"""
         try:
             self._segments = self._transcriber.transcribe(
                 file_path,
                 language=language,
+                vad_filter=vad_filter,
                 on_progress=self._on_progress_callback,
             )
         except Exception as e:
@@ -340,7 +362,7 @@ class TranscribeWindow(ctk.CTkToplevel):
             content = FileTranscriber.segments_to_txt(self._segments)
 
         try:
-            with open(save_path, "w", encoding="utf-8") as f:
+            with open(save_path, "w", encoding="utf-8-sig") as f:
                 f.write(content)
             self._status_label.configure(
                 text=f"已保存: {os.path.basename(save_path)}",

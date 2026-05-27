@@ -31,11 +31,12 @@ class FileTranscriber:
     # 所有支持格式
     SUPPORTED_FORMATS = SUPPORTED_AUDIO | SUPPORTED_VIDEO
 
-    # Whisper 模型对应的引导提示词
+    # Whisper 模型对应的引导提示词（纯文本输出，标点由后续流水线处理）
+    # 注意：提示词不能太长，否则 Whisper 在音乐/噪音片段会回显提示词内容
     LANGUAGE_PROMPTS = {
-        "zh": "以下是普通话的句子，请使用简体中文转录，注意正确使用逗号、句号等标点符号。",
-        "en": "The following is English speech. Use proper punctuation including commas and periods.",
-        "ja": "以下は日本語の音声です。",
+        "zh": "简体中文",
+        "en": "English speech",
+        "ja": "日本語の音声",
     }
 
     def __init__(
@@ -44,6 +45,8 @@ class FileTranscriber:
         cache_dir: Optional[str] = None,
         device: str = "cpu",
         compute_type: str = "int8",
+        punctuation_restorer=None,
+        punctuation_processor=None,
     ):
         """
         初始化文件转写引擎
@@ -53,11 +56,15 @@ class FileTranscriber:
             cache_dir: 模型缓存目录
             device: 计算设备 (cpu/cuda)
             compute_type: 计算类型 (int8/float16/float32)
+            punctuation_restorer: 标点恢复引擎 (CT-Transformer)，可选
+            punctuation_processor: 标点处理器（语气修正），可选
         """
         self.model_size = model_size
         self.cache_dir = cache_dir
         self.device = device
         self.compute_type = compute_type
+        self._punctuation_restorer = punctuation_restorer
+        self._punctuation_processor = punctuation_processor
         self._model = None
 
     def _ensure_model(self):
@@ -163,6 +170,7 @@ class FileTranscriber:
         file_path: str,
         language: Optional[str] = "zh",
         beam_size: int = 5,
+        vad_filter: bool = True,
         on_progress: Optional[Callable[[str, float], None]] = None,
     ) -> list[TranscriptionSegment]:
         """
@@ -172,6 +180,7 @@ class FileTranscriber:
             file_path: 文件路径
             language: 语言代码 (zh/en/ja)，None 为自动检测
             beam_size: 束搜索大小
+            vad_filter: 是否启用 VAD 过滤（音乐类音频建议关闭）
             on_progress: 进度回调 (status_text, progress_0_to_1)
 
         Returns:
@@ -200,25 +209,39 @@ class FileTranscriber:
         if language and language in self.LANGUAGE_PROMPTS:
             prompt = self.LANGUAGE_PROMPTS[language]
 
+        # VAD 参数配置
+        vad_params = {}
+        if vad_filter:
+            vad_params["vad_filter"] = True
+            vad_params["vad_parameters"] = dict(
+                min_silence_duration_ms=500,
+                speech_pad_ms=200,
+            )
+        else:
+            vad_params["vad_filter"] = False
+
         segments_iter, info = self._model.transcribe(
             audio,
             language=language,
             initial_prompt=prompt,
             beam_size=beam_size,
-            vad_filter=True,
             without_timestamps=False,  # 需要时间戳
+            **vad_params,
         )
 
         _report(
             f"检测到语言: {info.language} (概率 {info.language_probability:.2f})", 0.4
         )
 
-        # 步骤 4: 收集片段
+        # 步骤 4: 收集片段 + 标点后处理
         results: list[TranscriptionSegment] = []
         total_duration = info.duration if info.duration > 0 else 1.0
+        has_punc_pipeline = self._punctuation_restorer or self._punctuation_processor
 
         for segment in segments_iter:
             text = segment.text.strip()
+            if text and has_punc_pipeline:
+                text = self._process_punctuation(text)
             if text:
                 results.append(
                     TranscriptionSegment(
@@ -239,6 +262,38 @@ class FileTranscriber:
         logger.info(f"转写完成: {len(results)} 个片段, 总时长 {total_duration:.1f}s")
 
         return results
+
+    def _process_punctuation(self, text: str) -> str:
+        """
+        对单个片段执行标点后处理流水线
+
+        流程: 剥离原始标点 -> 繁体转简体 -> CT-Transformer 加标点 -> 语气修正
+        """
+        from engine.whisper_engine import WhisperEngine
+
+        # 剥离 Whisper 输出的残余标点
+        text = WhisperEngine._strip_punctuation(text)
+        text = text.strip()
+        if not text:
+            return text
+
+        # 繁体转简体（自动检测时可能输出繁体）
+        try:
+            import zhconv
+
+            text = zhconv.convert(text, "zh-cn")
+        except ImportError:
+            pass
+
+        # CT-Transformer 语义标点恢复
+        if self._punctuation_restorer:
+            text = self._punctuation_restorer.restore(text)
+
+        # 语气修正（反问/疑问/感叹）
+        if self._punctuation_processor:
+            text = self._punctuation_processor.process(text)
+
+        return text
 
     @staticmethod
     def segments_to_srt(segments: list[TranscriptionSegment]) -> str:

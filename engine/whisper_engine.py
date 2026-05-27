@@ -112,19 +112,20 @@ class WhisperEngine:
 
     # 语言对应的引导提示词（引导 Whisper 输出正确的文字风格）
     # 注意：不引导标点输出，标点由专门的 CT-Transformer 模型恢复
+    # 提示词不能太长，否则 Whisper 在音乐/噪音片段会回显提示词内容
     LANGUAGE_PROMPTS = {
-        "zh": "以下是普通话的句子，请使用简体中文转录。",
-        "en": "The following is English speech.",
-        "ja": "以下は日本語の音声です。",
+        "zh": "简体中文",
+        "en": "English speech",
+        "ja": "日本語の音声",
     }
 
     @staticmethod
     def _strip_punctuation(text: str) -> str:
         """
-        移除 Whisper 输出中的残余标点，保留纯文本
+        移除 Whisper 输出中的所有标点符号，保留纯文本
 
-        标点恢复由 PunctuationRestorer (CT-Transformer) 负责，
-        此处清理 Whisper 自带的不准确标点，避免干扰后续处理。
+        使用 Unicode 类别匹配所有标点（包括特殊变体如 ﹔U+FE14），
+        避免硬编码列表遗漏字符导致标点堆砌。
 
         Args:
             text: Whisper 原始输出文本
@@ -132,19 +133,20 @@ class WhisperEngine:
         Returns:
             去除标点后的纯文本
         """
-        import re
+        import unicodedata
 
-        # 移除中英文常见标点符号
-        _punc = (
-            r"，。！？、；："  # 中文基本标点
-            "\u201c\u201d\u2018\u2019"  # 中文引号 ""
-            r"「」『』（）【】《》"  # 中文括号和书名号
-            r",\.\!\?;:'\""  # 英文基本标点
-            r"\[\]\(\)"  # 英文括号
-            r"\-\—\…·"  # 破折号、省略号、中点
-        )
-        text = re.sub(f"[{_punc}]", "", text)
-        return text.strip()
+        # Unicode 类别以 "P" 开头的都是标点符号
+        # Po: 其他标点, Pd: 破折号, Ps/Pe/Pi/Pf: 括号/引号, Pc: 连接符
+        result = []
+        for ch in text:
+            cat = unicodedata.category(ch)
+            if cat.startswith("P"):
+                continue
+            # 额外过滤一些特殊符号（如中点 · 属于 Sm）
+            if ch in "·\u00b7\u2027\u30fb":
+                continue
+            result.append(ch)
+        return "".join(result).strip()
 
     @staticmethod
     def _normalize_audio(
