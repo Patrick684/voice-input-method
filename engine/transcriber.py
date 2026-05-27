@@ -47,6 +47,8 @@ class FileTranscriber:
         compute_type: str = "int8",
         punctuation_restorer=None,
         punctuation_processor=None,
+        audio_preprocessor=None,
+        text_corrector=None,
     ):
         """
         初始化文件转写引擎
@@ -58,6 +60,8 @@ class FileTranscriber:
             compute_type: 计算类型 (int8/float16/float32)
             punctuation_restorer: 标点恢复引擎 (CT-Transformer)，可选
             punctuation_processor: 标点处理器（语气修正），可选
+            audio_preprocessor: 音频预处理器（高通滤波+降噪），可选
+            text_corrector: 同音纠错器，可选
         """
         self.model_size = model_size
         self.cache_dir = cache_dir
@@ -65,6 +69,8 @@ class FileTranscriber:
         self.compute_type = compute_type
         self._punctuation_restorer = punctuation_restorer
         self._punctuation_processor = punctuation_processor
+        self._preprocessor = audio_preprocessor
+        self._text_corrector = text_corrector
         self._model = None
 
     def _ensure_model(self):
@@ -194,6 +200,12 @@ class FileTranscriber:
         # 步骤 1: 提取音频
         _report("提取音频中...", 0.05)
         audio = self.extract_audio(file_path)
+
+        # 音频预处理（高通滤波 + 降噪）
+        if self._preprocessor:
+            _report("音频预处理中...", 0.12)
+            audio = self._preprocessor.process(audio)
+
         _report("音频提取完成", 0.15)
 
         # 步骤 2: 加载模型
@@ -267,7 +279,7 @@ class FileTranscriber:
         """
         对单个片段执行标点后处理流水线
 
-        流程: 剥离原始标点 -> 繁体转简体 -> CT-Transformer 加标点 -> 语气修正
+        流程: 剥离原始标点 -> 繁体转简体 -> 同音纠错 -> CT-Transformer 加标点 -> 语气修正
         """
         from engine.whisper_engine import WhisperEngine
 
@@ -284,6 +296,10 @@ class FileTranscriber:
             text = zhconv.convert(text, "zh-cn")
         except ImportError:
             pass
+
+        # 同音纠错
+        if self._text_corrector:
+            text = self._text_corrector.correct(text)
 
         # CT-Transformer 语义标点恢复
         if self._punctuation_restorer:

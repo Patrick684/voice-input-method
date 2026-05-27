@@ -32,6 +32,8 @@
 | engine | `engine/hotword_manager.py` | 热词管理，initial_prompt 构建 |
 | engine | `engine/punctuation_processor.py` | 中文标点修正（语气/重复/空格） |
 | engine | `engine/punctuation_restorer.py` | CT-Transformer 语义标点恢复 |
+| engine | `engine/audio_preprocessor.py` | 音频预处理（高通滤波 + 谱减降噪） |
+| engine | `engine/text_corrector.py` | 中文同音纠错（基于 pypinyin） |
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
 | engine | `engine/post_processor.py` | 后处理规则替换引擎 |
 | engine | `engine/stream_vad.py` | 流式 VAD 检测器，基于 Silero VAD 神经网络实时切句 |
@@ -122,8 +124,10 @@ main.py
 │   ├── hotword_manager.py
 │   ├── punctuation_processor.py
 │   ├── punctuation_restorer.py → funasr (CT-Transformer)
+│   ├── audio_preprocessor.py → scipy (可选)
+│   ├── text_corrector.py → pypinyin
 │   ├── emoji_injector.py
-│   ├── post_processor.py
+│   ├── post_processor.py → pypinyin (拼音匹配规则)
 │   ├── stream_vad.py → torch (Silero VAD), numpy
 │   └── transcriber.py → pydub, faster-whisper
 ├── input/text_injector.py

@@ -232,6 +232,41 @@ class SettingsWindow(ctk.CTkToplevel):
         self.vad_label = ctk.CTkLabel(tab, text="50%")
         self.vad_label.pack(anchor="w", pady=(0, 15))
 
+        # 识别精度
+        ctk.CTkLabel(tab, text="识别精度", font=("", 14, "bold")).pack(
+            anchor="w", pady=(5, 5)
+        )
+
+        self.audio_preprocess_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="音频预处理（高通滤波 + 降噪）",
+            variable=self.audio_preprocess_var,
+        ).pack(anchor="w", pady=(0, 5))
+
+        # 降噪强度滑块
+        noise_frame = ctk.CTkFrame(tab, fg_color="transparent")
+        noise_frame.pack(fill="x", pady=(0, 5))
+        ctk.CTkLabel(noise_frame, text="降噪强度:").pack(side="left")
+        self.noise_strength_var = ctk.IntVar(value=10)  # 1.0 = 10 (x0.1)
+        self.noise_strength_label = ctk.CTkLabel(noise_frame, text="1.0", width=30)
+        self.noise_strength_label.pack(side="right")
+        ctk.CTkSlider(
+            noise_frame,
+            from_=0,
+            to=20,
+            number_of_steps=20,
+            variable=self.noise_strength_var,
+            command=self._on_noise_strength_changed,
+        ).pack(side="right", fill="x", expand=True, padx=(5, 5))
+
+        self.text_correction_var = ctk.BooleanVar()
+        ctk.CTkSwitch(
+            tab,
+            text="中文同音字纠错",
+            variable=self.text_correction_var,
+        ).pack(anchor="w", pady=(0, 15))
+
         # 文本输入
         ctk.CTkLabel(tab, text="文本输入", font=("", 14, "bold")).pack(
             anchor="w", pady=(5, 5)
@@ -431,6 +466,11 @@ class SettingsWindow(ctk.CTkToplevel):
         seconds = int(value) / 10
         self.silence_duration_label.configure(text=f"{seconds:.1f}s")
 
+    def _on_noise_strength_changed(self, value):
+        """降噪强度滑块回调"""
+        strength = int(value) / 10
+        self.noise_strength_label.configure(text=f"{strength:.1f}")
+
     def _refresh_history(self):
         """刷新历史记录显示"""
         if not self._history:
@@ -549,6 +589,13 @@ class SettingsWindow(ctk.CTkToplevel):
             density_map.get(self.config.get("emoji_density"), "中")
         )
 
+        # 识别精度
+        self.audio_preprocess_var.set(self.config.get("audio_preprocessing", True))
+        noise_val = self.config.get("noise_reduction_strength", 1.0)
+        self.noise_strength_var.set(int(noise_val * 10))
+        self.noise_strength_label.configure(text=f"{noise_val:.1f}")
+        self.text_correction_var.set(self.config.get("text_correction", True))
+
         # 后处理规则
         self.post_process_var.set(self.config.get("post_process_enabled", True))
         self.post_builtin_var.set(self.config.get("post_process_builtin", True))
@@ -651,6 +698,17 @@ class SettingsWindow(ctk.CTkToplevel):
         density = density_reverse.get(self.emoji_density_var.get(), "medium")
         if density != self.config.get("emoji_density"):
             changes["emoji_density"] = density
+
+        # 识别精度
+        if self.audio_preprocess_var.get() != self.config.get("audio_preprocessing"):
+            changes["audio_preprocessing"] = self.audio_preprocess_var.get()
+
+        noise_strength = self.noise_strength_var.get() / 10
+        if noise_strength != self.config.get("noise_reduction_strength"):
+            changes["noise_reduction_strength"] = noise_strength
+
+        if self.text_correction_var.get() != self.config.get("text_correction"):
+            changes["text_correction"] = self.text_correction_var.get()
 
         # 后处理规则
         if self.post_process_var.get() != self.config.get("post_process_enabled"):

@@ -18,20 +18,23 @@ class ReplaceRule:
         replacement: str,
         is_regex: bool = False,
         enabled: bool = True,
+        is_pinyin: bool = False,
     ):
         """
         初始化替换规则
 
         Args:
-            pattern: 匹配模式（纯文本或正则表达式）
+            pattern: 匹配模式（纯文本、正则表达式或拼音匹配）
             replacement: 替换文本
             is_regex: 是否为正则模式
             enabled: 是否启用
+            is_pinyin: 是否为拼音匹配模式（同音字纠错）
         """
         self.pattern = pattern
         self.replacement = replacement
         self.is_regex = is_regex
         self.enabled = enabled
+        self.is_pinyin = is_pinyin
         # 预编译正则（如果有）
         self._compiled = None
         if is_regex:
@@ -47,6 +50,7 @@ class ReplaceRule:
             "replacement": self.replacement,
             "is_regex": self.is_regex,
             "enabled": self.enabled,
+            "is_pinyin": self.is_pinyin,
         }
 
     @classmethod
@@ -57,6 +61,7 @@ class ReplaceRule:
             replacement=data["replacement"],
             is_regex=data.get("is_regex", False),
             enabled=data.get("enabled", True),
+            is_pinyin=data.get("is_pinyin", False),
         )
 
     def apply(self, text: str) -> str:
@@ -72,18 +77,69 @@ class ReplaceRule:
         if not self.enabled:
             return text
 
-        if self.is_regex and self._compiled:
+        if self.is_pinyin:
+            return self._apply_pinyin(text)
+        elif self.is_regex and self._compiled:
             return self._compiled.sub(self.replacement, text)
         else:
             return text.replace(self.pattern, self.replacement)
+
+    def _apply_pinyin(self, text: str) -> str:
+        """
+        拼音匹配替换：当文本中某段与 pattern 拼音相同时，替换为 replacement
+
+        用于 Whisper 同音字/近音字误识别的纠错。
+        """
+        try:
+            from pypinyin import lazy_pinyin
+
+            pattern_pinyin = "".join(lazy_pinyin(self.pattern))
+            text_pinyin_list = lazy_pinyin(text)
+            text_pinyin = "".join(text_pinyin_list)
+
+            if pattern_pinyin not in text_pinyin:
+                return text
+
+            # 找到拼音匹配的位置并替换
+            idx = text_pinyin.find(pattern_pinyin)
+            while idx != -1:
+                # 计算对应的字符位置
+                char_start = 0
+                running = 0
+                for i, py in enumerate(text_pinyin_list):
+                    if running == idx:
+                        char_start = i
+                        break
+                    running += len(py)
+                else:
+                    break
+
+                char_end = char_start + len(self.pattern)
+                if char_end <= len(text):
+                    text = text[:char_start] + self.replacement + text[char_end:]
+                    # 重新计算拼音
+                    text_pinyin_list = lazy_pinyin(text)
+                    text_pinyin = "".join(text_pinyin_list)
+                    idx = text_pinyin.find(pattern_pinyin, idx + len(pattern_pinyin))
+                else:
+                    break
+
+            return text
+        except ImportError:
+            # pypinyin 未安装，降级为精确文本替换
+            return text.replace(self.pattern, self.replacement)
+        except Exception as e:
+            logger.warning(f"拼音匹配规则失败: {e}")
+            return text
 
 
 class PostProcessor:
     """后处理规则引擎，管理替换规则并应用到识别结果"""
 
-    # 预置规则（覆盖 Whisper 常见中文识别错误）
+    # 预置规则（覆盖 Whisper 常见识别错误）
+    # 按类别组织，持续扩充
     BUILTIN_RULES: List[dict] = [
-        {"pattern": "拍touch", "replacement": "PyTorch"},
+        # ---- 英文技术术语误识别 ----
         {"pattern": "拍touch", "replacement": "PyTorch"},
         {"pattern": "ten so floor", "replacement": "TensorFlow"},
         {"pattern": "tenso floor", "replacement": "TensorFlow"},
@@ -91,9 +147,69 @@ class PostProcessor:
         {"pattern": "V S code", "replacement": "VSCode"},
         {"pattern": "chat GPT", "replacement": "ChatGPT"},
         {"pattern": "chat G P T", "replacement": "ChatGPT"},
-        {"pattern": "GitHub", "replacement": "GitHub"},
         {"pattern": "get hub", "replacement": "GitHub"},
         {"pattern": "git hub", "replacement": "GitHub"},
+        {"pattern": "dock her", "replacement": "Docker"},
+        {"pattern": "doctor", "replacement": "Docker", "is_regex": False},
+        {"pattern": "kubernetes", "replacement": "Kubernetes"},
+        {"pattern": "cube 8 net is", "replacement": "Kubernetes"},
+        {"pattern": "cube 8 netes", "replacement": "Kubernetes"},
+        {"pattern": "Jason", "replacement": "JSON"},
+        {"pattern": "ya mo", "replacement": "YAML"},
+        {"pattern": "HuggingFace", "replacement": "HuggingFace"},
+        {"pattern": "hugging face", "replacement": "HuggingFace"},
+        {"pattern": "lang chain", "replacement": "LangChain"},
+        {"pattern": "copilot", "replacement": "Copilot"},
+        {"pattern": "co pilot", "replacement": "Copilot"},
+        {"pattern": "Mac OS", "replacement": "macOS"},
+        {"pattern": "macos", "replacement": "macOS"},
+        {"pattern": "power point", "replacement": "PowerPoint"},
+        {"pattern": "excel", "replacement": "Excel"},
+        {"pattern": "outlook", "replacement": "Outlook"},
+        # ---- 中文技术术语/产品名误识别 ----
+        {"pattern": "微服务", "replacement": "微服务"},
+        {"pattern": "容器化", "replacement": "容器化"},
+        {"pattern": "云原生", "replacement": "云原生"},
+        # ---- 常见中文成语/四字词语误识别 ----
+        {"pattern": "女神一文录", "replacement": "女神异闻录", "is_pinyin": True},
+        {"pattern": "女神一文路", "replacement": "女神异闻录", "is_pinyin": True},
+        {"pattern": "女神异文录", "replacement": "女神异闻录", "is_pinyin": True},
+        {"pattern": "一心一议", "replacement": "一心一意", "is_pinyin": True},
+        {"pattern": "义心义意", "replacement": "一心一意", "is_pinyin": True},
+        {"pattern": "以心一意", "replacement": "一心一意", "is_pinyin": True},
+        {"pattern": "不谋而和", "replacement": "不谋而合", "is_pinyin": True},
+        {"pattern": "不言而预", "replacement": "不言而喻", "is_pinyin": True},
+        {"pattern": "不约而同", "replacement": "不约而同"},
+        {"pattern": "一建钟情", "replacement": "一见钟情", "is_pinyin": True},
+        {"pattern": "一建中情", "replacement": "一见钟情", "is_pinyin": True},
+        {"pattern": "一见中情", "replacement": "一见钟情", "is_pinyin": True},
+        {"pattern": "无中生有", "replacement": "无中生有"},
+        {"pattern": "画蛇天足", "replacement": "画蛇添足", "is_pinyin": True},
+        {"pattern": "画蛇天族", "replacement": "画蛇添足", "is_pinyin": True},
+        {"pattern": "对牛弹琴", "replacement": "对牛弹琴"},
+        {"pattern": "守株待兔", "replacement": "守株待兔"},
+        # ---- 常见中文口语/短语误识别 ----
+        {"pattern": "那这个", "replacement": "那这个"},
+        {"pattern": "然后呢", "replacement": "然后呢"},
+        {"pattern": "所以呢", "replacement": "所以呢"},
+        {"pattern": "就是说", "replacement": "就是说"},
+        {"pattern": "换句话说", "replacement": "换句话说"},
+        {"pattern": "总而言之", "replacement": "总而言之"},
+        # ---- 同音字高频混淆（拼音匹配）----
+        # “的地得”区分规则：这些是中文写作最高频错误
+        # 注意：拼音规则只处理明确的高频错误，避免过度纠正
+        {"pattern": "做座", "replacement": "做作", "is_pinyin": True},
+        {"pattern": "在线", "replacement": "在线"},
+        {"pattern": "再见", "replacement": "再见"},
+        {"pattern": "在哪", "replacement": "在哪"},
+        {"pattern": "再做", "replacement": "再做"},
+        # ---- 数字/量词误识别 ----
+        {"pattern": "一个两个", "replacement": "一个两个"},
+        {"pattern": "百分之", "replacement": "百分之"},
+        # ---- 人名/地名常见误识别 ----
+        {"pattern": "严谨义", "replacement": "龙司", "is_pinyin": True},
+        {"pattern": "摩尔", "replacement": "摩尔"},
+        {"pattern": "摩尔根", "replacement": "摩尔根"},
     ]
 
     def __init__(self, rules_file: Optional[str] = None):
@@ -168,7 +284,11 @@ class PostProcessor:
     # ---- 规则管理 ----
 
     def add_rule(
-        self, pattern: str, replacement: str, is_regex: bool = False
+        self,
+        pattern: str,
+        replacement: str,
+        is_regex: bool = False,
+        is_pinyin: bool = False,
     ) -> ReplaceRule:
         """
         添加用户自定义规则
@@ -177,11 +297,12 @@ class PostProcessor:
             pattern: 匹配模式
             replacement: 替换文本
             is_regex: 是否为正则
+            is_pinyin: 是否为拼音匹配
 
         Returns:
             新建的规则对象
         """
-        rule = ReplaceRule(pattern, replacement, is_regex=is_regex)
+        rule = ReplaceRule(pattern, replacement, is_regex=is_regex, is_pinyin=is_pinyin)
         self._rules.append(rule)
         self._save()
         return rule

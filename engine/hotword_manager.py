@@ -311,21 +311,27 @@ class HotwordManager:
         # 去重保序
         return list(dict.fromkeys(all_hotwords))
 
+    # 预置分类的自然语言上下文模板
+    # Whisper 对自然语言 prompt 的响应比纯关键词列表更好
+    _CATEGORY_CONTEXTS: Dict[str, str] = {
+        "科技编程": "科技编程",
+        "网络用语": "网络流行语",
+        "日常办公": "办公职场",
+    }
+
     def build_initial_prompt(
         self, weight: float = 1.5, max_words: int = 30
     ) -> Optional[str]:
         """
         构建 Whisper 的 initial_prompt 字符串
 
-        通过 initial_prompt 参数注入热词上下文，可以显著提升
-        特定词汇（人名、术语、地名等）的识别准确率。
-
-        智能截断：initial_prompt 过长会降低整体识别质量，
-        默认限制最多 30 个不重复热词。
+        采用自然语言上下文 + 关键词的混合策略：
+        1. 自然语言前缀描述场景（提升 Whisper 对语境的理解）
+        2. 关键词列表补充专有名词（直接注入识别倾向）
 
         Args:
-            weight: 热词权重（通过重复次数体现）
-            max_words: 最大不重复热词数量（防止 prompt 过长）
+            weight: 热词权重（目前用于控制关键词列表长度）
+            max_words: 最大不重复热词数量
 
         Returns:
             initial_prompt 字符串，如果没有热词则返回 None
@@ -335,21 +341,43 @@ class HotwordManager:
         if not all_hotwords:
             return None
 
-        # 智能截断：限制热词数量，防止 prompt 过长降低识别质量
+        # 智能截断：限制热词数量
         if len(all_hotwords) > max_words:
-            # 优先保留用户全局热词，然后是按顺序的分类热词
             all_hotwords = all_hotwords[:max_words]
 
-        # 构建 prompt：重复热词以增加权重
-        # Whisper 对 initial_prompt 中的词汇有更高识别倾向
-        repeat_count = max(1, int(weight))
-        prompt_words = []
-        for word in all_hotwords:
-            prompt_words.extend([word] * repeat_count)
+        # 构建自然语言上下文前缀
+        context_parts = []
 
-        # 用逗号分隔，Whisper 对这种格式识别效果好
-        prompt = "，".join(prompt_words)
-        return prompt
+        # 根据激活的预置分类生成场景描述
+        active_contexts = []
+        for cat_name in self._active_builtin:
+            ctx = self._CATEGORY_CONTEXTS.get(cat_name, cat_name)
+            active_contexts.append(ctx)
+        for cat_name in self._active_categories:
+            ctx = self._CATEGORY_CONTEXTS.get(cat_name, cat_name)
+            active_contexts.append(ctx)
+
+        if active_contexts:
+            topics = "和".join(active_contexts[:3])  # 最多取 3 个主题
+            context_parts.append(f"以下是关于{topics}的讨论")
+
+        # 拼接 prompt：自然语言前缀 + 关键词列表
+        parts = []
+        if context_parts:
+            parts.append("。".join(context_parts) + "。")
+
+        # 关键词列表（不重复，因为自然语言前缀已提供上下文）
+        # 对于特别重要的词（weight > 1），可以重复一次
+        prompt_words = []
+        repeat = max(1, int(weight))
+        for word in all_hotwords:
+            prompt_words.append(word)
+            if repeat > 1 and len(prompt_words) < max_words * 2:
+                prompt_words.append(word)
+
+        parts.append("，".join(prompt_words))
+
+        return " ".join(parts)
 
     # ---- 导入/导出 ----
 

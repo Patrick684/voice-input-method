@@ -20,6 +20,8 @@ from engine.punctuation_processor import PunctuationProcessor
 from engine.emoji_injector import EmojiInjector
 from engine.post_processor import PostProcessor
 from engine.punctuation_restorer import PunctuationRestorer
+from engine.audio_preprocessor import AudioPreprocessor
+from engine.text_corrector import TextCorrector
 from engine.stream_vad import StreamVAD
 from input.text_injector import TextInjector
 from hotkey.hotkey_manager import HotkeyManager
@@ -96,11 +98,19 @@ class VoiceInputApp:
             on_audio_chunk=self.stream_vad.feed if streaming_enabled else None,
         )
 
+        # 音频预处理器（高通滤波 + 谱减降噪）
+        self.audio_preprocessor = AudioPreprocessor(
+            sample_rate=self.config.get("sample_rate", 16000),
+            noise_reduction_strength=self.config.get("noise_reduction_strength", 1.0),
+            enabled=self.config.get("audio_preprocessing", True),
+        )
+
         # 语音识别引擎
         self.engine = WhisperEngine(
             model_size=self.config.get("model_size", "base"),
             compute_type=self.config.get("compute_type", "int8"),
             cache_dir=str(self.config.model_cache_dir),
+            audio_preprocessor=self.audio_preprocessor,
         )
 
         # 热词管理器
@@ -127,6 +137,11 @@ class VoiceInputApp:
         # 后处理规则引擎
         self.post_processor = PostProcessor(
             rules_file=str(self.config.rules_file),
+        )
+
+        # 同音纠错器
+        self.text_corrector = TextCorrector(
+            enabled=self.config.get("text_correction", True),
         )
 
         # 识别历史记录
@@ -294,8 +309,9 @@ class VoiceInputApp:
                     )
 
                     if text:
-                        # 后处理流水线: 繁转简 -> 标点恢复(CT-Transformer) -> 语气修正 -> emoji -> 规则替换
+                        # 后处理流水线: 繁转简 -> 同音纠错 -> 标点恢复 -> 语气修正 -> emoji -> 规则替换
                         text = self._to_simplified(text)
+                        text = self.text_corrector.correct(text)
                         text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
@@ -334,6 +350,7 @@ class VoiceInputApp:
                     if text:
                         # 流式后处理流水线（同批处理）
                         text = self._to_simplified(text)
+                        text = self.text_corrector.correct(text)
                         text = self.punctuation_restorer.restore(text)
                         text = self.punctuation_processor.process(
                             text, language=self.config.get("language")
@@ -625,6 +642,8 @@ class VoiceInputApp:
             compute_type=self.config.get("compute_type", "int8"),
             punctuation_restorer=self.punctuation_restorer,
             punctuation_processor=self.punctuation_processor,
+            audio_preprocessor=self.audio_preprocessor,
+            text_corrector=self.text_corrector,
             master=self._tk_root,
         )
         self._transcribe_window.protocol("WM_DELETE_WINDOW", self._on_transcribe_closed)

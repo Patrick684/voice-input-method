@@ -21,6 +21,8 @@ class TranscribeWindow(ctk.CTkToplevel):
         compute_type: str = "int8",
         punctuation_restorer=None,
         punctuation_processor=None,
+        audio_preprocessor=None,
+        text_corrector=None,
         master=None,
     ):
         super().__init__(master)
@@ -30,6 +32,8 @@ class TranscribeWindow(ctk.CTkToplevel):
         self._compute_type = compute_type
         self._punctuation_restorer = punctuation_restorer
         self._punctuation_processor = punctuation_processor
+        self._audio_preprocessor = audio_preprocessor
+        self._text_corrector = text_corrector
 
         # 转写状态
         self._transcriber: Optional[FileTranscriber] = None
@@ -240,6 +244,8 @@ class TranscribeWindow(ctk.CTkToplevel):
             compute_type=self._compute_type,
             punctuation_restorer=self._punctuation_restorer,
             punctuation_processor=self._punctuation_processor,
+            audio_preprocessor=self._audio_preprocessor,
+            text_corrector=self._text_corrector,
         )
 
         # 在主线程中读取 Tkinter 变量（后台线程不能访问）

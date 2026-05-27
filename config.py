@@ -42,9 +42,14 @@ class Config:
         # 后处理规则设置
         "post_process_enabled": True,
         "post_process_builtin": True,
+        # 同音纠错
+        "text_correction": True,  # 启用中文同音字纠错
         # 高级设置
         "vad_filter": True,
         "vad_threshold": 0.5,
+        # 音频预处理
+        "audio_preprocessing": True,  # 启用高通滤波 + 谱减降噪
+        "noise_reduction_strength": 1.0,  # 降噪强度 (0.0~2.0)
         # 历史记录设置
         "history_enabled": True,
         "history_max_records": 500,

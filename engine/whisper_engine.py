@@ -28,6 +28,7 @@ class WhisperEngine:
         compute_type: str = "int8",
         device: str = "cpu",
         cache_dir: Optional[str] = None,
+        audio_preprocessor=None,
     ):
         """
         初始化 Whisper 引擎
@@ -37,11 +38,13 @@ class WhisperEngine:
             compute_type: 计算类型 (int8/float16/float32)
             device: 计算设备 (cpu/cuda)
             cache_dir: 模型缓存目录
+            audio_preprocessor: 音频预处理器（高通滤波+降噪），可选
         """
         self.model_size = model_size
         self.compute_type = compute_type
         self.device = device
         self.cache_dir = Path(cache_dir) if cache_dir else None
+        self._preprocessor = audio_preprocessor
         self._model = None
         self._lock = threading.Lock()
         self._is_processing = False
@@ -241,6 +244,10 @@ class WhisperEngine:
             # 检查音频是否为空或太短
             if len(audio) < 1600:  # 少于 0.1 秒
                 return None
+
+            # 音频预处理（高通滤波 + 降噪）
+            if self._preprocessor:
+                audio = self._preprocessor.process(audio)
 
             # 归一化音频电平（解决麦克风增益不足导致识别率低的问题）
             audio = self._normalize_audio(audio)

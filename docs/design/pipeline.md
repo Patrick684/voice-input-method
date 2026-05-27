@@ -3,10 +3,10 @@
 ## 流水线概览
 
 ```
-按住快捷键 → 录音采集 → 语音识别 → 标点恢复 → 语气修正 → Emoji注入 → 规则替换 → 文本输入
-   ↓            ↓           ↓          ↓          ↓          ↓          ↓          ↓
-HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   TextInjector
-            (sd)       Engine     (FunASR)   Proc.      Inject.   (替换修正) (clipboard)
+按住快捷键 → 录音采集 → 音频预处理 → 语音识别 → 繁转简 → 同音纠错 → 标点恢复 → 语气修正 → Emoji注入 → 规则替换 → 文本输入
+   ↓            ↓           ↓          ↓        ↓        ↓        ↓        ↓        ↓          ↓          ↓
+HotkeyMgr   Recorder   AudioPre   Whisper   zhconv  TextCorr  CT-Trans  Punct.    Emoji     PostProc   TextInjector
+            (sd)       Processor  Engine              (pypinyin)(FunASR)  Proc.     Inject.   (替换修正) (clipboard)
 ```
 
 ## 各阶段详解
@@ -21,7 +21,22 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
 
 音频数据以 numpy 数组形式收集在队列中，录音结束后拼接为完整数组。
 
-### 2. 语音识别 (WhisperEngine)
+### 2. 音频预处理 (AudioPreprocessor)
+
+输入: numpy float32 数组 (16kHz, mono)
+
+处理步骤:
+1. 高通滤波 (Butterworth 80Hz，去除空调/风扇低频噪音)
+2. 谱减降噪 (前0.5s估算噪声功率谱，从整个音频中减去)
+3. 双向滤波实现零相位
+
+配置参数:
+- `audio_preprocessing`: 是否启用 (默认 True)
+- `noise_reduction_strength`: 降噪强度 0.0~2.0 (默认 1.0)
+
+依赖: scipy (可选，未安装时自动跳过)
+
+### 3. 语音识别 (WhisperEngine)
 
 输入: numpy float32 数组 (16kHz, mono)
 
@@ -35,7 +50,25 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
 
 输出: 无标点的纯文本
 
-### 3. 标点恢复 (PunctuationRestorer - CT-Transformer)
+### 4. 繁转简 (zhconv)
+
+自动检测语言时 Whisper 可能输出繁体字，通过 zhconv 统一转换为简体中文。
+
+### 5. 同音纠错 (TextCorrector)
+
+输入: 简体中文文本（无标点或已有标点均可）
+
+处理步骤:
+1. 高频同音混淆词典精确替换（如 "以精" → "已经"）
+2. "的/地/得" 语法规则修正（基于上下文正则判断）
+3. 上下文敏感选择（基于拼音+上下文正则选择最佳候选）
+
+配置参数:
+- `text_correction`: 是否启用 (默认 True)
+
+依赖: pypinyin
+
+### 6. 标点恢复 (PunctuationRestorer - CT-Transformer)
 
 输入: 无标点的纯文本
 
@@ -47,7 +80,7 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
 
 输出: 带标点的文本
 
-### 4. 语气修正 (PunctuationProcessor)
+### 7. 语气修正 (PunctuationProcessor)
 
 处理步骤:
 1. 英文标点转中文标点 (中文语境检测)
@@ -56,7 +89,7 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
 4. 标点前后空格修正
 5. (可选) 自动分段
 
-### 5. Emoji 注入 (EmojiInjector)
+### 8. Emoji 注入 (EmojiInjector)
 
 处理步骤:
 1. 按句子分割
@@ -65,15 +98,16 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
 4. 在句末标点前插入
 5. 密度控制 (low/medium/high)
 
-### 6. 规则替换 (PostProcessor)
+### 9. 规则替换 (PostProcessor)
 
 处理步骤:
 1. 依次应用所有启用的替换规则
 2. 支持精确匹配替换（如"拍touch"→"PyTorch"）
 3. 支持正则表达式替换
-4. 预置规则覆盖 Whisper 常见中文识别错误
+4. 支持拼音匹配替换（基于 pypinyin 同音字纠错）
+5. 预置规则覆盖 Whisper 常见中英文识别错误（60+条）
 
-### 7. 文本输入 (TextInjector)
+### 10. 文本输入 (TextInjector)
 
 处理步骤:
 1. 保存当前剪贴板内容
@@ -91,7 +125,13 @@ HotkeyMgr   Recorder   Whisper    CT-Trans.  Punct.     Emoji     PostProc.   Te
     ↓
 音频数据 (np.ndarray, float32, shape=(N,))
     ↓
+预处理音频 (np.ndarray, 高通滤波+降噪)
+    ↓
 纯文本 (str, 无标点)
+    ↓
+简体文本 (str, 繁转简)
+    ↓
+纠错文本 (str, 同音纠错)
     ↓
 标点恢复文本 (str, CT-Transformer)
     ↓
@@ -109,7 +149,10 @@ emoji 注入文本 (str)
 | 阶段 | 耗时 (3秒语音) | 内存峰值 |
 |------|---------------|----------|
 | 录音采集 | 实时 | ~1 MB |
+| 音频预处理 | ~50 ms | ~2 MB |
 | 语音识别 | ~3 秒 | ~1.2 GB (medium) |
+| 繁转简 | <1 ms | 可忽略 |
+| 同音纠错 | ~10 ms | ~5 MB (pypinyin) |
 | 标点恢复 | ~0.5 秒 | ~300 MB (CT-Transformer) |
 | 语气修正 | <1 ms | 可忽略 |
 | Emoji 注入 | <1 ms | 可忽略 |
@@ -146,10 +189,10 @@ HotkeyMgr   Recorder    StreamVAD       Whisper    CT-Trans.  后处理链   cli
 音视频文件转写是独立于实时录音的另一个流水线，通过托盘菜单「转写文件...」触发：
 
 ```
-选择文件 → pydub 提取音频 → Whisper 转写(带时间戳) → SRT/TXT 输出
-   ↓            ↓                   ↓                      ↓
-filedialog   AudioSegment      WhisperModel          保存字幕文件
-             (ffmpeg)        (without_timestamps=F)   (filedialog)
+选择文件 → pydub 提取音频 → 音频预处理 → Whisper 转写(带时间戳) → 同音纠错 → 标点恢复 → SRT/TXT 输出
+   ↓            ↓               ↓              ↓                    ↓          ↓          ↓
+filedialog   AudioSegment   AudioPreproc   WhisperModel         TextCorr   CT-Trans  保存字幕文件
+             (ffmpeg)       (scipy)        (without_timestamps=F) (pypinyin)(FunASR)  (filedialog)
 ```
 
 支持的格式：
