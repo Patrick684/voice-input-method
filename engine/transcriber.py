@@ -31,12 +31,12 @@ class FileTranscriber:
     # 所有支持格式
     SUPPORTED_FORMATS = SUPPORTED_AUDIO | SUPPORTED_VIDEO
 
-    # Whisper 模型对应的引导提示词（纯文本输出，标点由后续流水线处理）
-    # 注意：提示词不能太长，否则 Whisper 在音乐/噪音片段会回显提示词内容
+    # Whisper 模型对应的引导提示词（引导输出风格并暗示标点习惯）
+    # 通过句号暗示模型输出标点，但不能太长，否则在音乐/噪音片段会回显提示词内容
     LANGUAGE_PROMPTS = {
-        "zh": "简体中文",
-        "en": "English speech",
-        "ja": "日本語の音声",
+        "zh": "普通话，简体。",
+        "en": "English speech.",
+        "ja": "日本語の音声。",
     }
 
     def __init__(

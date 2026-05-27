@@ -105,12 +105,11 @@ class VoiceInputApp:
             enabled=self.config.get("audio_preprocessing", True),
         )
 
-        # 语音识别引擎
+        # 语音识别引擎（语音输入不启用预处理，避免短音频失真）
         self.engine = WhisperEngine(
             model_size=self.config.get("model_size", "base"),
             compute_type=self.config.get("compute_type", "int8"),
             cache_dir=str(self.config.model_cache_dir),
-            audio_preprocessor=self.audio_preprocessor,
         )
 
         # 热词管理器

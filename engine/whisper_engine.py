@@ -113,13 +113,12 @@ class WhisperEngine:
         with self._lock:
             self._model = None
 
-    # 语言对应的引导提示词（引导 Whisper 输出正确的文字风格）
-    # 注意：不引导标点输出，标点由专门的 CT-Transformer 模型恢复
-    # 提示词不能太长，否则 Whisper 在音乐/噪音片段会回显提示词内容
+    # 语言对应的引导提示词（引导 Whisper 输出正确的文字风格和标点习惯）
+    # 通过句号暗示模型输出标点，但不能太长，否则在音乐/噪音片段会回显提示词内容
     LANGUAGE_PROMPTS = {
-        "zh": "简体中文",
-        "en": "English speech",
-        "ja": "日本語の音声",
+        "zh": "普通话，简体。",
+        "en": "English speech.",
+        "ja": "日本語の音声。",
     }
 
     @staticmethod

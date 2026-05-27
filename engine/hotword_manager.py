@@ -359,7 +359,7 @@ class HotwordManager:
 
         if active_contexts:
             topics = "和".join(active_contexts[:3])  # 最多取 3 个主题
-            context_parts.append(f"以下是关于{topics}的讨论")
+            context_parts.append(f"以下是关于{topics}的讨论。")
 
         # 拼接 prompt：自然语言前缀 + 关键词列表
         parts = []

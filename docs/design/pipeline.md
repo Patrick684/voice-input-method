@@ -3,11 +3,21 @@
 ## 流水线概览
 
 ```
-按住快捷键 → 录音采集 → 音频预处理 → 语音识别 → 繁转简 → 同音纠错 → 标点恢复 → 语气修正 → Emoji注入 → 规则替换 → 文本输入
-   ↓            ↓           ↓          ↓        ↓        ↓        ↓        ↓        ↓          ↓          ↓
-HotkeyMgr   Recorder   AudioPre   Whisper   zhconv  TextCorr  CT-Trans  Punct.    Emoji     PostProc   TextInjector
-            (sd)       Processor  Engine              (pypinyin)(FunASR)  Proc.     Inject.   (替换修正) (clipboard)
+[语音输入路径]
+按住快捷键 → 录音采集 → 语音识别 → 繁转简 → 同音纠错 → 标点恢复 → 语气修正 → Emoji注入 → 规则替换 → 文本输入
+   ↓            ↓          ↓        ↓        ↓        ↓        ↓        ↓          ↓          ↓
+HotkeyMgr   Recorder   Whisper   zhconv  TextCorr  CT-Trans  Punct.    Emoji     PostProc   TextInjector
+            (sd)       Engine            (pypinyin)(FunASR)  Proc.     Inject.   (替换修正) (clipboard)
+
+[文件转写路径]
+选择文件 → 音频提取 → 音频预处理 → 语音识别 → 繁转简 → 同音纠错 → 标点恢复 → 语气修正 → Emoji注入 → 规则替换 → 文本输出
+   ↓          ↓          ↓          ↓        ↓        ↓        ↓        ↓        ↓          ↓
+FileDialog  ffmpeg    AudioPre   Whisper   zhconv  TextCorr  CT-Trans  Punct.    Emoji     PostProc
+                     Processor  Engine            (pypinyin)(FunASR)  Proc.     Inject.   (替换修正)
 ```
+
+> 注意：音频预处理（高通滤波+谱减降噪）仅用于文件转写路径。语音输入路径跳过预处理，因为麦克风录音不会有稳态底噪，
+> 且短音频的噪声估算不准确，反而损伤语音信号导致识别精度下降。
 
 ## 各阶段详解
 
@@ -21,7 +31,9 @@ HotkeyMgr   Recorder   AudioPre   Whisper   zhconv  TextCorr  CT-Trans  Punct.  
 
 音频数据以 numpy 数组形式收集在队列中，录音结束后拼接为完整数组。
 
-### 2. 音频预处理 (AudioPreprocessor)
+### 2. 音频预处理 (AudioPreProcessor) [仅文件转写]
+
+> 语音输入路径不使用此模块，因为麦克风录音不会有稳态底噪，且短音频的噪声估算不准确。
 
 输入: numpy float32 数组 (16kHz, mono)
 

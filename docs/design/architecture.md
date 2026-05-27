@@ -32,7 +32,7 @@
 | engine | `engine/hotword_manager.py` | 热词管理，initial_prompt 构建 |
 | engine | `engine/punctuation_processor.py` | 中文标点修正（语气/重复/空格） |
 | engine | `engine/punctuation_restorer.py` | CT-Transformer 语义标点恢复 |
-| engine | `engine/audio_preprocessor.py` | 音频预处理（高通滤波 + 谱减降噪） |
+| engine | `engine/audio_preprocessor.py` | 音频预处理（高通滤波 + 谱减降噪，仅文件转写路径使用） |
 | engine | `engine/text_corrector.py` | 中文同音纠错（基于 pypinyin） |
 | engine | `engine/emoji_injector.py` | 语义 emoji 注入 |
 | engine | `engine/post_processor.py` | 后处理规则替换引擎 |
