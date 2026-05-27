@@ -1,6 +1,5 @@
 import os
 import urllib.request
-from pathlib import Path
 
 # ====================== 配置 ======================
 # 下载目录（你指定的路径）
