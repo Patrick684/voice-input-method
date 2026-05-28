@@ -31,3 +31,6 @@ debug_output.txt
 
 # Qoder IDE
 .qoder/
+
+# Personal/temporary files
+internal/
